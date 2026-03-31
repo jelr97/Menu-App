@@ -344,6 +344,9 @@ const tabContents = document.querySelectorAll('.tab-content');
 function switchTab(tabName) {
   tabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabName));
   tabContents.forEach(tc => tc.classList.toggle('active', tc.id === 'tab-' + tabName));
+  // Hide FAB when not on recipes list
+  const fab = document.getElementById('recipeFab');
+  if (fab) fab.classList.toggle('hidden', tabName !== 'recipes');
   if (tabName === 'recipes') renderRecipesList();
   if (tabName === 'mealplan') renderMealPlan();
   if (tabName === 'grocery') renderGroceryList();
@@ -445,7 +448,76 @@ document.getElementById('importCancelBtn').addEventListener('click', () => { pen
 importModal.addEventListener('click', (e) => { if (e.target === importModal) { pendingImportData = null; importModal.classList.remove('active'); } });
 
 // ===== RENDER STUBS (implemented in next tasks) =====
-function renderRecipesList() {}
+let currentCategory = 'all';
+let currentSearch = '';
+let currentView = 'list'; // 'list' or 'detail'
+let viewingRecipeId = null;
+
+function renderRecipesList() {
+  currentView = 'list';
+  viewingRecipeId = null;
+  const container = document.getElementById('tab-recipes');
+  const recipes = getAllRecipes();
+  const filtered = recipes.filter(r => {
+    const matchCat = currentCategory === 'all' || r.category === currentCategory;
+    const matchSearch = currentSearch === '' ||
+      tName(r.name).toLowerCase().includes(currentSearch.toLowerCase());
+    return matchCat && matchSearch;
+  });
+
+  container.innerHTML = `
+    <input type="text" id="recipeSearch" value="${currentSearch}"
+      data-lang-placeholder="search" placeholder="${t('search')}"
+      style="margin-bottom:8px;">
+    <div class="chip-row">
+      ${['all','breakfast','lunch','dinner','snack'].map(cat =>
+        `<button class="chip ${currentCategory === cat ? 'active' : ''}" data-cat="${cat}">
+          ${t(cat)}
+        </button>`
+      ).join('')}
+    </div>
+    ${filtered.length === 0 ? '<div class="empty-state">No recipes found</div>' :
+      filtered.map(r => `
+        <div class="card" data-recipe-id="${r.id}">
+          <div class="card-title">${tName(r.name)}</div>
+          <div class="card-meta">
+            ${t('prepTime')} ${r.prepTime}${t('minutes')} · ${t('cookTime')} ${r.cookTime}${t('minutes')} · ${r.servings} ${t('servings').toLowerCase()}
+          </div>
+        </div>
+      `).join('')}
+  `;
+
+  // FAB
+  let fab = document.getElementById('recipeFab');
+  if (!fab) {
+    fab = document.createElement('button');
+    fab.id = 'recipeFab';
+    fab.className = 'fab';
+    fab.textContent = '+';
+    document.body.appendChild(fab);
+    fab.addEventListener('click', () => openRecipeForm(null));
+  }
+  fab.classList.remove('hidden');
+
+  // Event: search
+  document.getElementById('recipeSearch').addEventListener('input', (e) => {
+    currentSearch = e.target.value;
+    renderRecipesList();
+  });
+
+  // Event: category chips
+  container.querySelectorAll('.chip[data-cat]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      currentCategory = chip.dataset.cat;
+      renderRecipesList();
+    });
+  });
+
+  // Event: card clicks
+  container.querySelectorAll('.card[data-recipe-id]').forEach(card => {
+    card.addEventListener('click', () => renderRecipeDetail(card.dataset.recipeId));
+  });
+}
 function renderMealPlan() {}
 function renderGroceryList() {}
 
