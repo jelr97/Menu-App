@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Menu App</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <style>
     /* ===== RESET & BASE ===== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -882,7 +884,7 @@ function renderMealPlan() {
           ${sorted.map((meal, mi) => {
             const recipe = getRecipeById(meal.recipeId);
             const slotLabel = meal.slot.startsWith('custom:') ? meal.slot.slice(7) : t(meal.slot);
-            return `<div class="meal-chip" data-date="${key}" data-meal-idx="${mi}">
+            return `<div class="meal-chip" data-date="${key}" data-meal-idx="${mi}" data-recipe-id="${meal.recipeId}">
               <div class="slot-label">${slotLabel}</div>
               <div class="recipe-name">${recipe ? tName(recipe.name) : '?'}</div>
             </div>`;
@@ -910,10 +912,15 @@ function renderMealPlan() {
   container.querySelectorAll('.meal-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       const key = chip.dataset.date;
-      const idx = parseInt(chip.dataset.mealIdx);
+      const slotLabel = chip.querySelector('.slot-label').textContent;
+      const recipeName = chip.querySelector('.recipe-name').textContent;
       if (!confirm(t('removeMeal') + '?')) return;
       const meals = mealPlan[key] || [];
-      meals.splice(idx, 1);
+      // Find the meal by matching slot and recipe name rather than by sorted index
+      const recipeId = chip.dataset.recipeId;
+      const mealIdx = meals.findIndex(m => m.recipeId === recipeId &&
+        (m.slot.startsWith('custom:') ? m.slot.slice(7) : t(m.slot)) === slotLabel);
+      if (mealIdx >= 0) meals.splice(mealIdx, 1);
       if (meals.length === 0) delete mealPlan[key];
       else mealPlan[key] = meals;
       saveMealPlan();
