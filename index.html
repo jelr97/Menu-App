@@ -834,7 +834,179 @@ function collectSteps(lang) {
     .filter(s => s);
 }
 
-function renderMealPlan() {}
+function getWeekDates() {
+  const today = new Date();
+  const day = today.getDay(); // 0=Sun
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((day + 6) % 7));
+  const dates = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    dates.push(d);
+  }
+  return dates;
+}
+
+function dateKey(d) {
+  return d.toISOString().split('T')[0];
+}
+
+function renderMealPlan() {
+  const container = document.getElementById('tab-mealplan');
+  const weekDates = getWeekDates();
+  const dayNames = ['mon','tue','wed','thu','fri','sat','sun'];
+  const todayKey = dateKey(new Date());
+
+  container.innerHTML = `
+    <div class="flex-between mb-8">
+      <div class="section-title" style="margin:0">${t('mealPlan')}</div>
+      <button class="btn btn-sm btn-danger" id="clearWeekBtn">${t('clearWeek')}</button>
+    </div>
+    <div class="week-row">
+      ${weekDates.map((d, i) => {
+        const key = dateKey(d);
+        const isToday = key === todayKey;
+        const meals = mealPlan[key] || [];
+        const slotOrder = ['breakfast','lunch','dinner','snack'];
+        const sorted = [...meals].sort((a, b) => {
+          const ai = slotOrder.indexOf(a.slot) >= 0 ? slotOrder.indexOf(a.slot) : 99;
+          const bi = slotOrder.indexOf(b.slot) >= 0 ? slotOrder.indexOf(b.slot) : 99;
+          return ai - bi;
+        });
+        return `<div class="day-col ${isToday ? 'today' : ''}">
+          <div class="day-header ${isToday ? 'today' : ''}">
+            ${t(dayNames[i])}
+            <div class="day-date">${d.getDate()}/${d.getMonth()+1}</div>
+          </div>
+          ${sorted.map((meal, mi) => {
+            const recipe = getRecipeById(meal.recipeId);
+            const slotLabel = meal.slot.startsWith('custom:') ? meal.slot.slice(7) : t(meal.slot);
+            return `<div class="meal-chip" data-date="${key}" data-meal-idx="${mi}">
+              <div class="slot-label">${slotLabel}</div>
+              <div class="recipe-name">${recipe ? tName(recipe.name) : '?'}</div>
+            </div>`;
+          }).join('')}
+          <button class="day-add-btn" data-date="${key}">+</button>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+
+  // Clear week
+  document.getElementById('clearWeekBtn').addEventListener('click', () => {
+    if (!confirm(t('confirmClearWeek'))) return;
+    weekDates.forEach(d => delete mealPlan[dateKey(d)]);
+    saveMealPlan();
+    renderMealPlan();
+  });
+
+  // Add meal buttons
+  container.querySelectorAll('.day-add-btn').forEach(btn => {
+    btn.addEventListener('click', () => openAddMealFlow(btn.dataset.date));
+  });
+
+  // Remove meal on click
+  container.querySelectorAll('.meal-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const key = chip.dataset.date;
+      const idx = parseInt(chip.dataset.mealIdx);
+      if (!confirm(t('removeMeal') + '?')) return;
+      const meals = mealPlan[key] || [];
+      meals.splice(idx, 1);
+      if (meals.length === 0) delete mealPlan[key];
+      else mealPlan[key] = meals;
+      saveMealPlan();
+      renderMealPlan();
+    });
+  });
+}
+
+function openAddMealFlow(dateStr) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>${t('selectSlot')}</h2>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${['breakfast','lunch','dinner','snack'].map(slot =>
+          `<button class="btn btn-secondary btn-full slot-pick" data-slot="${slot}">${t(slot)}</button>`
+        ).join('')}
+        <button class="btn btn-secondary btn-full slot-pick" data-slot="custom">${t('customSlot')}</button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary btn-full close-modal">${t('cancel')}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('.close-modal').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+  modal.querySelectorAll('.slot-pick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const slot = btn.dataset.slot;
+      if (slot === 'custom') {
+        const name = prompt(t('customSlotName'));
+        if (!name) return;
+        modal.remove();
+        openRecipePicker(dateStr, 'custom:' + name);
+      } else {
+        modal.remove();
+        openRecipePicker(dateStr, slot);
+      }
+    });
+  });
+}
+
+function openRecipePicker(dateStr, slot) {
+  const recipes = getAllRecipes();
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>${t('selectRecipe')}</h2>
+      <input type="text" id="pickerSearch" placeholder="${t('search')}" style="margin-bottom:12px">
+      <div id="pickerList" style="max-height:50vh;overflow-y:auto">
+        ${recipes.map(r => `
+          <div class="card pick-recipe" data-id="${r.id}" style="cursor:pointer">
+            <div class="card-title">${tName(r.name)}</div>
+            <div class="card-meta">${t(r.category)}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary btn-full close-modal">${t('cancel')}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('.close-modal').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+  // Search filter
+  modal.querySelector('#pickerSearch').addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    modal.querySelectorAll('.pick-recipe').forEach(card => {
+      const name = card.querySelector('.card-title').textContent.toLowerCase();
+      card.style.display = name.includes(q) ? '' : 'none';
+    });
+  });
+
+  // Pick a recipe
+  modal.querySelectorAll('.pick-recipe').forEach(card => {
+    card.addEventListener('click', () => {
+      if (!mealPlan[dateStr]) mealPlan[dateStr] = [];
+      mealPlan[dateStr].push({ slot, recipeId: card.dataset.id });
+      saveMealPlan();
+      modal.remove();
+      renderMealPlan();
+    });
+  });
+}
+
 function renderGroceryList() {}
 
 // ===== INIT =====
