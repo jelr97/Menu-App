@@ -518,6 +518,150 @@ function renderRecipesList() {
     card.addEventListener('click', () => renderRecipeDetail(card.dataset.recipeId));
   });
 }
+
+function renderRecipeDetail(recipeId) {
+  currentView = 'detail';
+  viewingRecipeId = recipeId;
+  const recipe = getRecipeById(recipeId);
+  if (!recipe) return renderRecipesList();
+
+  const baseRecipe = recipe.overrides
+    ? (STARTER_RECIPES.find(r => r.id === recipe.overrides) || recipe)
+    : recipe;
+  const scaleFactor = recipe.servings / baseRecipe.servings;
+
+  const container = document.getElementById('tab-recipes');
+  const fab = document.getElementById('recipeFab');
+  if (fab) fab.classList.add('hidden');
+
+  const isOverride = !!recipe.overrides;
+  const isCustom = recipe.isCustom && !recipe.overrides;
+
+  container.innerHTML = `
+    <div class="detail-header">
+      <button class="back-btn" id="backToList">&#8592;</button>
+      <div>
+        ${isCustom ? `<button class="btn btn-sm btn-secondary" id="editRecipeBtn">${t('editRecipe')}</button>
+        <button class="btn btn-sm btn-danger" id="deleteRecipeBtn">${t('deleteRecipe')}</button>` : ''}
+        ${isOverride ? `<button class="btn btn-sm btn-secondary" id="resetRecipeBtn">${t('resetToOriginal')}</button>` : ''}
+      </div>
+    </div>
+    <h2>${tName(recipe.name)}</h2>
+    <div class="card-meta mb-16">
+      ${t('prepTime')} ${recipe.prepTime}${t('minutes')} · ${t('cookTime')} ${recipe.cookTime}${t('minutes')}
+    </div>
+    <div class="servings-control">
+      <span style="font-weight:600">${t('servings')}:</span>
+      <button id="servMinus">&#8722;</button>
+      <span class="servings-count" id="servCount">${recipe.servings}</span>
+      <button id="servPlus">+</button>
+    </div>
+    <div class="section-title">${t('ingredients')}</div>
+    <div id="ingredientsList">
+      ${recipe.ingredients.map((ing, i) => {
+        const displayAmount = +(ing.amount * scaleFactor).toFixed(1);
+        return `<div class="ingredient-row">
+          <span class="ingredient-amount" data-idx="${i}" title="Click to edit">${displayAmount} ${ing.unit}</span>
+          <span>${tName(ing.name)}</span>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="section-title">${t('instructions')}</div>
+    <div>
+      ${(recipe.instructions[currentLang] || recipe.instructions.en).map((step, i) => `
+        <div class="instruction-step">
+          <span class="step-num">${i + 1}</span>
+          <span>${step}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
+  // Back button
+  document.getElementById('backToList').addEventListener('click', renderRecipesList);
+
+  // Servings +/-
+  let currentServings = recipe.servings;
+  document.getElementById('servMinus').addEventListener('click', () => {
+    if (currentServings <= 1) return;
+    currentServings--;
+    updateServingsDisplay(recipe, baseRecipe, currentServings);
+  });
+  document.getElementById('servPlus').addEventListener('click', () => {
+    currentServings++;
+    updateServingsDisplay(recipe, baseRecipe, currentServings);
+  });
+
+  // Click ingredient amount to edit
+  container.querySelectorAll('.ingredient-amount').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = parseInt(el.dataset.idx);
+      const ing = recipe.ingredients[idx];
+      const currentAmount = +(ing.amount * (currentServings / baseRecipe.servings)).toFixed(1);
+      const newVal = prompt(`${tName(ing.name)} — ${t('amount')}:`, currentAmount);
+      if (newVal === null || isNaN(parseFloat(newVal))) return;
+      // Save as override: scale back to base servings
+      const baseAmount = parseFloat(newVal) / (currentServings / baseRecipe.servings);
+      saveIngredientEdit(recipe, idx, baseAmount);
+    });
+  });
+
+  // Delete custom recipe
+  const deleteBtn = document.getElementById('deleteRecipeBtn');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', () => {
+      if (!confirm(t('confirmDelete'))) return;
+      customRecipes = customRecipes.filter(r => r.id !== recipe.id);
+      saveRecipes();
+      renderRecipesList();
+    });
+  }
+
+  // Edit custom recipe
+  const editBtn = document.getElementById('editRecipeBtn');
+  if (editBtn) {
+    editBtn.addEventListener('click', () => openRecipeForm(recipe));
+  }
+
+  // Reset to original
+  const resetBtn = document.getElementById('resetRecipeBtn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      customRecipes = customRecipes.filter(r => r.id !== recipe.id);
+      saveRecipes();
+      renderRecipeDetail(recipe.overrides);
+    });
+  }
+}
+
+function updateServingsDisplay(recipe, baseRecipe, newServings) {
+  document.getElementById('servCount').textContent = newServings;
+  const scale = newServings / baseRecipe.servings;
+  document.querySelectorAll('.ingredient-amount').forEach(el => {
+    const idx = parseInt(el.dataset.idx);
+    const ing = recipe.ingredients[idx];
+    const displayAmount = +(ing.amount * scale).toFixed(1);
+    el.textContent = `${displayAmount} ${ing.unit}`;
+  });
+}
+
+function saveIngredientEdit(recipe, ingredientIdx, newBaseAmount) {
+  let target;
+  if (recipe.isCustom) {
+    target = recipe;
+  } else {
+    // Create an override copy
+    target = JSON.parse(JSON.stringify(recipe));
+    target.isCustom = true;
+    target.overrides = recipe.id;
+    target.id = recipe.id + '-custom';
+    customRecipes.push(target);
+  }
+  target.ingredients[ingredientIdx].amount = newBaseAmount;
+  saveRecipes();
+  renderRecipeDetail(target.id);
+}
+
 function renderMealPlan() {}
 function renderGroceryList() {}
 
