@@ -662,6 +662,178 @@ function saveIngredientEdit(recipe, ingredientIdx, newBaseAmount) {
   renderRecipeDetail(target.id);
 }
 
+function openRecipeForm(existingRecipe) {
+  currentView = 'form';
+  const container = document.getElementById('tab-recipes');
+  const fab = document.getElementById('recipeFab');
+  if (fab) fab.classList.add('hidden');
+
+  const r = existingRecipe || {
+    id: '', name: { en: '', es: '' }, category: 'dinner', servings: 2,
+    prepTime: 0, cookTime: 0, ingredients: [], instructions: { en: [], es: [] }, isCustom: true
+  };
+  const isEdit = !!existingRecipe;
+
+  container.innerHTML = `
+    <div class="detail-header">
+      <button class="back-btn" id="formBack">&#8592;</button>
+      <h2>${isEdit ? t('editRecipe') : t('addRecipe')}</h2>
+    </div>
+    <div class="mb-8">
+      <label style="font-size:13px;color:#888">${t('recipeName')} (EN)</label>
+      <input type="text" id="rNameEn" value="${r.name.en || ''}">
+    </div>
+    <div class="mb-8">
+      <label style="font-size:13px;color:#888">${t('recipeName')} (ES)</label>
+      <input type="text" id="rNameEs" value="${r.name.es || ''}">
+    </div>
+    <div class="mb-8">
+      <label style="font-size:13px;color:#888">${t('category')}</label>
+      <select id="rCategory">
+        ${['breakfast','lunch','dinner','snack'].map(cat =>
+          `<option value="${cat}" ${r.category === cat ? 'selected' : ''}>${t(cat)}</option>`
+        ).join('')}
+      </select>
+    </div>
+    <div style="display:flex;gap:8px" class="mb-8">
+      <div style="flex:1">
+        <label style="font-size:13px;color:#888">${t('servingsCount')}</label>
+        <input type="number" id="rServings" value="${r.servings}" min="1">
+      </div>
+      <div style="flex:1">
+        <label style="font-size:13px;color:#888">${t('prepTimeMin')}</label>
+        <input type="number" id="rPrep" value="${r.prepTime}" min="0">
+      </div>
+      <div style="flex:1">
+        <label style="font-size:13px;color:#888">${t('cookTimeMin')}</label>
+        <input type="number" id="rCook" value="${r.cookTime}" min="0">
+      </div>
+    </div>
+
+    <div class="section-title">${t('ingredients')}</div>
+    <div id="ingredientsForm">
+      ${r.ingredients.map((ing, i) => ingredientFormRow(ing, i)).join('')}
+    </div>
+    <button class="btn btn-sm btn-secondary mb-16" id="addIngBtn">+ ${t('addIngredient')}</button>
+
+    <div class="section-title">${t('instructions')} (EN)</div>
+    <div id="stepsFormEn">
+      ${(r.instructions.en || []).map((s, i) => stepFormRow(s, i, 'en')).join('')}
+    </div>
+    <button class="btn btn-sm btn-secondary mb-8" id="addStepEnBtn">+ ${t('addStep')} (EN)</button>
+
+    <div class="section-title">${t('instructions')} (ES)</div>
+    <div id="stepsFormEs">
+      ${(r.instructions.es || []).map((s, i) => stepFormRow(s, i, 'es')).join('')}
+    </div>
+    <button class="btn btn-sm btn-secondary mb-16" id="addStepEsBtn">+ ${t('addStep')} (ES)</button>
+
+    <button class="btn btn-primary btn-full" id="saveRecipeBtn">${t('save')}</button>
+  `;
+
+  let ingCount = r.ingredients.length;
+  let stepEnCount = (r.instructions.en || []).length;
+  let stepEsCount = (r.instructions.es || []).length;
+
+  document.getElementById('formBack').addEventListener('click', () => {
+    if (isEdit) renderRecipeDetail(r.id);
+    else renderRecipesList();
+  });
+
+  document.getElementById('addIngBtn').addEventListener('click', () => {
+    const div = document.getElementById('ingredientsForm');
+    div.insertAdjacentHTML('beforeend', ingredientFormRow({ name: { en: '', es: '' }, amount: 0, unit: 'g' }, ingCount));
+    ingCount++;
+  });
+
+  document.getElementById('addStepEnBtn').addEventListener('click', () => {
+    const div = document.getElementById('stepsFormEn');
+    div.insertAdjacentHTML('beforeend', stepFormRow('', stepEnCount, 'en'));
+    stepEnCount++;
+  });
+
+  document.getElementById('addStepEsBtn').addEventListener('click', () => {
+    const div = document.getElementById('stepsFormEs');
+    div.insertAdjacentHTML('beforeend', stepFormRow('', stepEsCount, 'es'));
+    stepEsCount++;
+  });
+
+  // Delegated remove buttons
+  container.addEventListener('click', (e) => {
+    if (e.target.classList.contains('remove-ing')) e.target.closest('.ing-row').remove();
+    if (e.target.classList.contains('remove-step')) e.target.closest('.step-row').remove();
+  });
+
+  document.getElementById('saveRecipeBtn').addEventListener('click', () => {
+    const nameEn = document.getElementById('rNameEn').value.trim();
+    if (!nameEn) { showToast('Recipe name (EN) is required'); return; }
+
+    const newRecipe = {
+      id: isEdit ? r.id : nameEn.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      name: { en: nameEn, es: document.getElementById('rNameEs').value.trim() || nameEn },
+      category: document.getElementById('rCategory').value,
+      servings: parseInt(document.getElementById('rServings').value) || 2,
+      prepTime: parseInt(document.getElementById('rPrep').value) || 0,
+      cookTime: parseInt(document.getElementById('rCook').value) || 0,
+      ingredients: collectIngredients(),
+      instructions: { en: collectSteps('en'), es: collectSteps('es') },
+      isCustom: true
+    };
+
+    if (isEdit) {
+      const idx = customRecipes.findIndex(cr => cr.id === r.id);
+      if (idx >= 0) customRecipes[idx] = newRecipe;
+      else customRecipes.push(newRecipe);
+    } else {
+      // Check for duplicate id
+      if (getRecipeById(newRecipe.id)) newRecipe.id += '-' + Date.now();
+      customRecipes.push(newRecipe);
+    }
+    saveRecipes();
+    renderRecipeDetail(newRecipe.id);
+  });
+}
+
+function ingredientFormRow(ing, idx) {
+  return `<div class="ing-row" style="display:flex;gap:4px;margin-bottom:6px;align-items:center">
+    <input type="text" placeholder="EN" value="${ing.name.en || ''}" style="flex:2" class="ing-name-en" data-idx="${idx}">
+    <input type="text" placeholder="ES" value="${ing.name.es || ''}" style="flex:2" class="ing-name-es" data-idx="${idx}">
+    <input type="number" value="${ing.amount}" style="flex:1" class="ing-amount" data-idx="${idx}" min="0" step="any">
+    <select class="ing-unit" data-idx="${idx}" style="flex:1">
+      ${['g','kg','ml','l','tbsp','tsp','units','cups'].map(u =>
+        `<option value="${u}" ${ing.unit === u ? 'selected' : ''}>${u}</option>`
+      ).join('')}
+    </select>
+    <button class="remove-ing" style="background:none;border:none;color:#dc2626;font-size:18px;cursor:pointer">×</button>
+  </div>`;
+}
+
+function stepFormRow(text, idx, lang) {
+  return `<div class="step-row" style="display:flex;gap:4px;margin-bottom:6px;align-items:center">
+    <span style="font-size:13px;color:#888;min-width:24px">${idx + 1}.</span>
+    <textarea class="step-text-${lang}" style="flex:1;min-height:40px">${text}</textarea>
+    <button class="remove-step" style="background:none;border:none;color:#dc2626;font-size:18px;cursor:pointer">×</button>
+  </div>`;
+}
+
+function collectIngredients() {
+  const rows = document.querySelectorAll('.ing-row');
+  return Array.from(rows).map(row => ({
+    name: {
+      en: row.querySelector('.ing-name-en').value.trim(),
+      es: row.querySelector('.ing-name-es').value.trim()
+    },
+    amount: parseFloat(row.querySelector('.ing-amount').value) || 0,
+    unit: row.querySelector('.ing-unit').value
+  })).filter(ing => ing.name.en);
+}
+
+function collectSteps(lang) {
+  return Array.from(document.querySelectorAll(`.step-text-${lang}`))
+    .map(el => el.value.trim())
+    .filter(s => s);
+}
+
 function renderMealPlan() {}
 function renderGroceryList() {}
 
