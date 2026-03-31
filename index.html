@@ -286,7 +286,172 @@
   <script src="lang.js"></script>
   <script src="recipes-data.js"></script>
   <script>
-  // App JS will go here in subsequent tasks
+// ===== STATE =====
+const STORAGE_KEYS = {
+  recipes: 'menuapp-recipes',
+  mealplan: 'menuapp-mealplan',
+  groceries: 'menuapp-groceries',
+  lang: 'menuapp-lang',
+};
+
+let currentLang = localStorage.getItem(STORAGE_KEYS.lang) || 'en';
+let customRecipes = JSON.parse(localStorage.getItem(STORAGE_KEYS.recipes) || '[]');
+let mealPlan = JSON.parse(localStorage.getItem(STORAGE_KEYS.mealplan) || '{}');
+let groceryData = JSON.parse(localStorage.getItem(STORAGE_KEYS.groceries) || '{"autoItems":[],"manualItems":[]}');
+
+function saveRecipes() { localStorage.setItem(STORAGE_KEYS.recipes, JSON.stringify(customRecipes)); }
+function saveMealPlan() { localStorage.setItem(STORAGE_KEYS.mealplan, JSON.stringify(mealPlan)); }
+function saveGroceries() { localStorage.setItem(STORAGE_KEYS.groceries, JSON.stringify(groceryData)); }
+function saveLang() { localStorage.setItem(STORAGE_KEYS.lang, currentLang); }
+
+function getAllRecipes() {
+  const overrideIds = customRecipes.filter(r => r.overrides).map(r => r.overrides);
+  const base = STARTER_RECIPES.filter(r => !overrideIds.includes(r.id));
+  return [...base, ...customRecipes];
+}
+
+function getRecipeById(id) {
+  return customRecipes.find(r => r.id === id) || STARTER_RECIPES.find(r => r.id === id);
+}
+
+// ===== i18n =====
+function t(key) {
+  return LANG[key] ? (LANG[key][currentLang] || LANG[key].en) : key;
+}
+
+function tName(obj) {
+  if (!obj) return '';
+  if (typeof obj === 'string') return obj;
+  return obj[currentLang] || obj.en || '';
+}
+
+function updateLangUI() {
+  document.querySelectorAll('[data-lang]').forEach(el => {
+    const key = el.getAttribute('data-lang');
+    if (LANG[key]) el.textContent = t(key);
+  });
+  document.querySelectorAll('[data-lang-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-lang-placeholder');
+    if (LANG[key]) el.placeholder = t(key);
+  });
+  document.getElementById('langToggle').textContent = currentLang.toUpperCase();
+}
+
+// ===== TAB NAVIGATION =====
+const tabButtons = document.querySelectorAll('.tab-bar button');
+const tabContents = document.querySelectorAll('.tab-content');
+
+function switchTab(tabName) {
+  tabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabName));
+  tabContents.forEach(tc => tc.classList.toggle('active', tc.id === 'tab-' + tabName));
+  if (tabName === 'recipes') renderRecipesList();
+  if (tabName === 'mealplan') renderMealPlan();
+  if (tabName === 'grocery') renderGroceryList();
+}
+
+tabButtons.forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+// ===== LANGUAGE TOGGLE =====
+document.getElementById('langToggle').addEventListener('click', () => {
+  currentLang = currentLang === 'en' ? 'es' : 'en';
+  saveLang();
+  updateLangUI();
+  // Re-render active tab
+  const activeTab = document.querySelector('.tab-bar button.active').dataset.tab;
+  switchTab(activeTab);
+});
+
+// ===== SETTINGS MODAL =====
+const settingsModal = document.getElementById('settingsModal');
+document.getElementById('settingsBtn').addEventListener('click', () => settingsModal.classList.add('active'));
+document.getElementById('settingsClose').addEventListener('click', () => settingsModal.classList.remove('active'));
+settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) settingsModal.classList.remove('active'); });
+
+// ===== TOAST =====
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+// ===== EXPORT =====
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const data = { customRecipes, mealPlan, groceryData, exportedAt: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'menu-app-data.json'; a.click();
+  URL.revokeObjectURL(url);
+  showToast(t('exportSuccess'));
+  settingsModal.classList.remove('active');
+});
+
+// ===== IMPORT =====
+const importModal = document.getElementById('importModal');
+const fileInput = document.getElementById('fileInput');
+let pendingImportData = null;
+
+document.getElementById('importBtn').addEventListener('click', () => {
+  settingsModal.classList.remove('active');
+  fileInput.click();
+});
+
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      pendingImportData = JSON.parse(ev.target.result);
+      importModal.classList.add('active');
+    } catch { showToast('Invalid JSON file'); }
+  };
+  reader.readAsText(file);
+  fileInput.value = '';
+});
+
+function applyImport(mode) {
+  if (!pendingImportData) return;
+  if (mode === 'replace') {
+    customRecipes = pendingImportData.customRecipes || [];
+    mealPlan = pendingImportData.mealPlan || {};
+    groceryData = pendingImportData.groceryData || { autoItems: [], manualItems: [] };
+  } else {
+    // Merge: add new custom recipes (by id), merge meal plan days, append manual grocery items
+    const existingIds = new Set(customRecipes.map(r => r.id));
+    (pendingImportData.customRecipes || []).forEach(r => {
+      if (!existingIds.has(r.id)) customRecipes.push(r);
+      else {
+        const idx = customRecipes.findIndex(e => e.id === r.id);
+        customRecipes[idx] = r;
+      }
+    });
+    Object.assign(mealPlan, pendingImportData.mealPlan || {});
+    const importManual = pendingImportData.groceryData?.manualItems || [];
+    groceryData.manualItems = [...groceryData.manualItems, ...importManual];
+  }
+  saveRecipes(); saveMealPlan(); saveGroceries();
+  pendingImportData = null;
+  importModal.classList.remove('active');
+  showToast(t('importSuccess'));
+  const activeTab = document.querySelector('.tab-bar button.active').dataset.tab;
+  switchTab(activeTab);
+}
+
+document.getElementById('importMergeBtn').addEventListener('click', () => applyImport('merge'));
+document.getElementById('importReplaceBtn').addEventListener('click', () => applyImport('replace'));
+document.getElementById('importCancelBtn').addEventListener('click', () => { pendingImportData = null; importModal.classList.remove('active'); });
+importModal.addEventListener('click', (e) => { if (e.target === importModal) { pendingImportData = null; importModal.classList.remove('active'); } });
+
+// ===== RENDER STUBS (implemented in next tasks) =====
+function renderRecipesList() {}
+function renderMealPlan() {}
+function renderGroceryList() {}
+
+// ===== INIT =====
+updateLangUI();
+renderRecipesList();
   </script>
 </body>
 </html>
