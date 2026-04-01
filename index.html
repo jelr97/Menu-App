@@ -369,7 +369,10 @@ function getAllRecipes() {
 }
 
 function getRecipeById(id) {
-  return customRecipes.find(r => r.id === id) || STARTER_RECIPES.find(r => r.id === id);
+  // Check for a custom override of this recipe first
+  const override = customRecipes.find(r => r.overrides === id && !r.deleted);
+  if (override) return override;
+  return customRecipes.find(r => r.id === id && !r.deleted) || STARTER_RECIPES.find(r => r.id === id);
 }
 
 // ===== i18n =====
