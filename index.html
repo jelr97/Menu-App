@@ -389,7 +389,6 @@ function updateLangUI() {
     const key = el.getAttribute('data-lang-placeholder');
     if (LANG[key]) el.placeholder = t(key);
   });
-  document.getElementById('langToggle').textContent = currentLang.toUpperCase();
 }
 
 // ===== TAB NAVIGATION =====
