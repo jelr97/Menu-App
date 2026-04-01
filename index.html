@@ -763,7 +763,7 @@ function renderRecipeDetail(recipeId) {
       <span class="servings-count" id="servCount">${recipe.servings}</span>
       <button id="servPlus">+</button>
     </div>
-    <button class="btn btn-primary btn-full hidden" id="saveServingsBtn" style="margin-bottom:12px">${t('save')} ${t('servings').toLowerCase()}</button>
+    <button class="btn btn-primary btn-full hidden" id="saveServingsBtn" style="margin-bottom:12px">${t('save')}</button>
     <div class="section-title">${t('ingredients')}</div>
     <div id="ingredientsList">
       ${recipe.ingredients.map((ing, i) => {
