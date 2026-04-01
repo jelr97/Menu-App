@@ -141,17 +141,16 @@
     }
     .day-header.today { color: #2563eb; }
     .day-date { font-size: 12px; color: #999; font-weight: 400; }
-    .meal-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .meal-chips { display: flex; flex-direction: column; gap: 4px; }
     .meal-chip {
-      font-size: 12px; padding: 6px 10px; background: #f3f4f6; border-radius: 6px;
-      position: relative; flex: 1; min-width: 80px;
+      font-size: 13px; padding: 8px 10px; background: #f3f4f6; border-radius: 6px;
+      position: relative; display: flex; align-items: center; gap: 8px;
     }
-    .meal-chip .slot-label { font-weight: 600; font-size: 10px; color: #888; text-transform: uppercase; }
-    .meal-chip .recipe-name { font-size: 12px; margin-top: 2px; }
+    .meal-chip .slot-label { font-weight: 600; font-size: 10px; color: #888; text-transform: uppercase; min-width: 55px; }
+    .meal-chip .recipe-name { font-size: 13px; flex: 1; }
     .day-add-btn {
-      padding: 6px 12px; border: 1px dashed #ddd; border-radius: 6px;
+      width: 100%; padding: 6px; border: 1px dashed #ddd; border-radius: 6px;
       background: none; font-size: 18px; color: #ccc; cursor: pointer;
-      flex: 0; min-width: 36px;
     }
     .day-add-btn:active { background: #f9f9f9; }
 
@@ -1289,8 +1288,8 @@ function renderMealPlan() {
               const recipe = getRecipeById(meal.recipeId);
               const slotLabel = meal.slot.startsWith('custom:') ? meal.slot.slice(7) : t(meal.slot);
               return `<div class="meal-chip" data-date="${key}" data-meal-idx="${mi}" data-recipe-id="${meal.recipeId}">
-                <div class="slot-label">${slotLabel}</div>
-                <div class="recipe-name">${recipe ? tName(recipe.name) : '?'}</div>
+                <span class="slot-label">${slotLabel}</span>
+                <span class="recipe-name">${recipe ? tName(recipe.name) : '?'}</span>
               </div>`;
             }).join('')}
             <button class="day-add-btn" data-date="${key}">+</button>
