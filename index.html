@@ -983,6 +983,8 @@ function openRecipeForm(existingRecipe) {
       instructions: { en: [], es: [] },
       isCustom: true
     };
+    // Preserve override link so the original starter recipe stays hidden
+    if (r.overrides) newRecipe.overrides = r.overrides;
 
     if (isEdit) {
       const idx = customRecipes.findIndex(cr => cr.id === r.id);
@@ -998,10 +1000,12 @@ function openRecipeForm(existingRecipe) {
   });
 }
 
+function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+
 function ingredientFormRow(ing, idx) {
   return `<div class="ing-row" style="display:flex;gap:4px;margin-bottom:6px;align-items:center">
-    <input type="text" placeholder="EN" value="${ing.name.en || ''}" style="flex:2" class="ing-name-en" data-idx="${idx}">
-    <input type="text" placeholder="ES" value="${ing.name.es || ''}" style="flex:2" class="ing-name-es" data-idx="${idx}">
+    <input type="text" placeholder="EN" value="${esc(ing.name.en)}" style="flex:2" class="ing-name-en" data-idx="${idx}">
+    <input type="text" placeholder="ES" value="${esc(ing.name.es)}" style="flex:2" class="ing-name-es" data-idx="${idx}">
     <input type="number" value="${ing.amount}" style="flex:1" class="ing-amount" data-idx="${idx}" min="0" step="any">
     <select class="ing-unit" data-idx="${idx}" style="flex:1">
       ${['g','kg','ml','l','tbsp','tsp','units','cups'].map(u =>
