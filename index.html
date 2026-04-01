@@ -584,6 +584,8 @@ function showSyncModal() {
 function getSyncData() {
   return {
     customRecipes, mealPlan, groceryData, inventoryData, mealHistory, checklistPattern,
+    lang: currentLang,
+    activeTab: localStorage.getItem('menuapp-active-tab') || 'recipes',
     syncedAt: new Date().toISOString()
   };
 }
@@ -595,9 +597,10 @@ function applySyncData(data) {
   inventoryData = data.inventoryData || { items: [], customItems: [] };
   mealHistory = data.mealHistory || [];
   checklistPattern = data.checklistPattern || null;
+  if (data.lang) { currentLang = data.lang; saveLang(); }
   saveRecipes(); saveMealPlan(); saveGroceries(); saveInventory(); saveMealHistory(); saveChecklistPattern();
-  const activeTab = document.querySelector('.tab-bar button.active').dataset.tab;
-  switchTab(activeTab);
+  updateLangUI();
+  switchTab(data.activeTab || 'recipes');
 }
 
 async function syncUpload() {
