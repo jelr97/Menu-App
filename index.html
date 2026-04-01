@@ -772,6 +772,7 @@ function renderRecipeDetail(recipeId) {
       <button id="servMinus">&#8722;</button>
       <span class="servings-count" id="servCount">${recipe.servings}</span>
       <button id="servPlus">+</button>
+      <button class="btn btn-sm btn-primary hidden" id="saveServingsBtn" style="margin-left:8px">${t('save')}</button>
     </div>
     <div class="section-title">${t('ingredients')}</div>
     <div id="ingredientsList">
@@ -799,14 +800,43 @@ function renderRecipeDetail(recipeId) {
 
   // Servings +/-
   let currentServings = recipe.servings;
+  const saveServBtn = document.getElementById('saveServingsBtn');
+
+  function onServingsChange() {
+    updateServingsDisplay(recipe, baseRecipe, currentServings);
+    saveServBtn.classList.toggle('hidden', currentServings === recipe.servings);
+  }
+
   document.getElementById('servMinus').addEventListener('click', () => {
     if (currentServings <= 1) return;
     currentServings--;
-    updateServingsDisplay(recipe, baseRecipe, currentServings);
+    onServingsChange();
   });
   document.getElementById('servPlus').addEventListener('click', () => {
     currentServings++;
-    updateServingsDisplay(recipe, baseRecipe, currentServings);
+    onServingsChange();
+  });
+
+  saveServBtn.addEventListener('click', () => {
+    const scale = currentServings / baseRecipe.servings;
+    let target;
+    if (recipe.isCustom) {
+      target = recipe;
+    } else {
+      target = JSON.parse(JSON.stringify(recipe));
+      target.isCustom = true;
+      target.overrides = recipe.id;
+      target.id = recipe.id + '-custom';
+      // Remove old override if exists
+      customRecipes = customRecipes.filter(r => r.id !== target.id);
+      customRecipes.push(target);
+    }
+    target.servings = currentServings;
+    target.ingredients = baseRecipe.ingredients.map(ing => ({
+      ...ing, name: { ...ing.name }, amount: +(ing.amount * scale).toFixed(2)
+    }));
+    saveRecipes();
+    renderRecipeDetail(target.id);
   });
 
   // Click ingredient amount to edit
