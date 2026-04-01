@@ -373,7 +373,7 @@ function saveInventory() { localStorage.setItem(STORAGE_KEYS.inventory, JSON.str
 function getAllRecipes() {
   const overrideIds = customRecipes.filter(r => r.overrides).map(r => r.overrides);
   const base = STARTER_RECIPES.filter(r => !overrideIds.includes(r.id));
-  return [...base, ...customRecipes];
+  return [...base, ...customRecipes].filter(r => !r.deleted);
 }
 
 function getRecipeById(id) {
@@ -698,7 +698,7 @@ function renderRecipesList() {
         <div class="card" data-recipe-id="${r.id}">
           <div class="card-title">${tName(r.name)}</div>
           <div class="card-meta">
-            ${t('prepTime')} ${r.prepTime}${t('minutes')} · ${t('cookTime')} ${r.cookTime}${t('minutes')} · ${r.servings} ${t('servings').toLowerCase()}
+            ${r.servings} ${t('servings').toLowerCase()}
           </div>
         </div>
       `).join('')}
@@ -758,15 +758,12 @@ function renderRecipeDetail(recipeId) {
     <div class="detail-header">
       <button class="back-btn" id="backToList">&#8592;</button>
       <div>
-        ${isCustom ? `<button class="btn btn-sm btn-secondary" id="editRecipeBtn">${t('editRecipe')}</button>
-        <button class="btn btn-sm btn-danger" id="deleteRecipeBtn">${t('deleteRecipe')}</button>` : ''}
+        ${isCustom ? `<button class="btn btn-sm btn-secondary" id="editRecipeBtn">${t('editRecipe')}</button>` : ''}
         ${isOverride ? `<button class="btn btn-sm btn-secondary" id="resetRecipeBtn">${t('resetToOriginal')}</button>` : ''}
+        <button class="btn btn-sm btn-danger" id="deleteRecipeBtn">${t('deleteRecipe')}</button>
       </div>
     </div>
     <h2>${tName(recipe.name)}</h2>
-    <div class="card-meta mb-16">
-      ${t('prepTime')} ${recipe.prepTime}${t('minutes')} · ${t('cookTime')} ${recipe.cookTime}${t('minutes')}
-    </div>
     <div class="servings-control">
       <span style="font-weight:600">${t('servings')}:</span>
       <button id="servMinus">&#8722;</button>
@@ -853,16 +850,18 @@ function renderRecipeDetail(recipeId) {
     });
   });
 
-  // Delete custom recipe
-  const deleteBtn = document.getElementById('deleteRecipeBtn');
-  if (deleteBtn) {
-    deleteBtn.addEventListener('click', () => {
-      if (!confirm(t('confirmDelete'))) return;
+  // Delete recipe (custom or starter)
+  document.getElementById('deleteRecipeBtn').addEventListener('click', () => {
+    if (!confirm(t('confirmDelete'))) return;
+    if (recipe.isCustom) {
       customRecipes = customRecipes.filter(r => r.id !== recipe.id);
-      saveRecipes();
-      renderRecipesList();
-    });
-  }
+    } else {
+      // Hide starter recipe by adding a deleted marker
+      customRecipes.push({ id: recipe.id + '-deleted', overrides: recipe.id, deleted: true, isCustom: true });
+    }
+    saveRecipes();
+    renderRecipesList();
+  });
 
   // Edit custom recipe
   const editBtn = document.getElementById('editRecipeBtn');
@@ -942,19 +941,9 @@ function openRecipeForm(existingRecipe) {
         ).join('')}
       </select>
     </div>
-    <div style="display:flex;gap:8px" class="mb-8">
-      <div style="flex:1">
-        <label style="font-size:13px;color:#888">${t('servingsCount')}</label>
-        <input type="number" id="rServings" value="${r.servings}" min="1">
-      </div>
-      <div style="flex:1">
-        <label style="font-size:13px;color:#888">${t('prepTimeMin')}</label>
-        <input type="number" id="rPrep" value="${r.prepTime}" min="0">
-      </div>
-      <div style="flex:1">
-        <label style="font-size:13px;color:#888">${t('cookTimeMin')}</label>
-        <input type="number" id="rCook" value="${r.cookTime}" min="0">
-      </div>
+    <div class="mb-8">
+      <label style="font-size:13px;color:#888">${t('servingsCount')}</label>
+      <input type="number" id="rServings" value="${r.servings}" min="1">
     </div>
 
     <div class="section-title">${t('ingredients')}</div>
@@ -1020,8 +1009,8 @@ function openRecipeForm(existingRecipe) {
       name: { en: nameEn, es: document.getElementById('rNameEs').value.trim() || nameEn },
       category: document.getElementById('rCategory').value,
       servings: parseInt(document.getElementById('rServings').value) || 2,
-      prepTime: parseInt(document.getElementById('rPrep').value) || 0,
-      cookTime: parseInt(document.getElementById('rCook').value) || 0,
+      prepTime: 0,
+      cookTime: 0,
       ingredients: collectIngredients(),
       instructions: { en: collectSteps('en'), es: collectSteps('es') },
       isCustom: true
