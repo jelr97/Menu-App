@@ -379,8 +379,8 @@ function t(key) {
 
 function tName(obj) {
   if (!obj) return '';
-  if (typeof obj === 'string') return obj;
-  return obj[currentLang] || obj.en || '';
+  const s = typeof obj === 'string' ? obj : (obj[currentLang] || obj.en || '');
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 function updateLangUI() {
