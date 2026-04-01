@@ -758,8 +758,7 @@ function renderRecipeDetail(recipeId) {
     <div class="detail-header">
       <button class="back-btn" id="backToList">&#8592;</button>
       <div>
-        ${isCustom ? `<button class="btn btn-sm btn-secondary" id="editRecipeBtn" data-t="editRecipe">${t('editRecipe')}</button>` : ''}
-        ${isOverride ? `<button class="btn btn-sm btn-secondary" id="resetRecipeBtn" data-t="resetToOriginal">${t('resetToOriginal')}</button>` : ''}
+        <button class="btn btn-sm btn-secondary" id="editRecipeBtn" data-t="editRecipe">${t('editRecipe')}</button>
         <button class="btn btn-sm btn-danger" id="deleteRecipeBtn" data-t="deleteRecipe">${t('deleteRecipe')}</button>
       </div>
     </div>
@@ -855,20 +854,21 @@ function renderRecipeDetail(recipeId) {
   });
 
   // Edit custom recipe
-  const editBtn = document.getElementById('editRecipeBtn');
-  if (editBtn) {
-    editBtn.addEventListener('click', () => openRecipeForm(recipe));
-  }
-
-  // Reset to original
-  const resetBtn = document.getElementById('resetRecipeBtn');
-  if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
-      customRecipes = customRecipes.filter(r => r.id !== recipe.id);
+  document.getElementById('editRecipeBtn').addEventListener('click', () => {
+    // For starter recipes, create an editable copy
+    if (!recipe.isCustom) {
+      const copy = JSON.parse(JSON.stringify(recipe));
+      copy.isCustom = true;
+      copy.overrides = recipe.id;
+      copy.id = recipe.id + '-custom';
+      customRecipes = customRecipes.filter(r => r.id !== copy.id);
+      customRecipes.push(copy);
       saveRecipes();
-      renderRecipeDetail(recipe.overrides);
-    });
-  }
+      openRecipeForm(copy);
+    } else {
+      openRecipeForm(recipe);
+    }
+  });
 }
 
 function updateServingsDisplay(recipe, baseRecipe, newServings) {
