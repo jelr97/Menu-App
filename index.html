@@ -216,20 +216,6 @@
       width: 22px; height: 22px; accent-color: #2563eb; cursor: pointer;
     }
 
-    /* ===== INVENTORY ===== */
-    .inv-row {
-      display: flex; align-items: center; gap: 8px; padding: 10px 0;
-      border-bottom: 1px solid #f0f0f0;
-    }
-    .inv-name { flex: 1; font-size: 14px; }
-    .inv-amount {
-      min-width: 60px; text-align: right; font-weight: 600; font-size: 14px;
-      color: #2563eb; cursor: pointer; padding: 4px 8px; border-radius: 6px;
-      background: #eff6ff;
-    }
-    .inv-amount.zero { color: #ccc; background: #f9f9f9; }
-    .inv-unit { font-size: 12px; color: #888; min-width: 32px; }
-
     /* ===== UTILITY ===== */
     .section-title { font-size: 14px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 8px; }
     .empty-state { text-align: center; padding: 40px 16px; color: #999; font-size: 14px; }
@@ -257,9 +243,6 @@
   <!-- TAB: MEAL PLAN -->
   <div class="tab-content" id="tab-mealplan"></div>
 
-  <!-- TAB: INVENTORY -->
-  <div class="tab-content" id="tab-inventory"></div>
-
   <!-- TAB: GROCERY LIST -->
   <div class="tab-content" id="tab-grocery"></div>
 
@@ -273,13 +256,9 @@
       <span class="tab-icon">&#127858;</span>
       <span data-lang="recipes">Recipes</span>
     </button>
-    <button data-tab="inventory">
-      <span class="tab-icon">&#127968;</span>
-      <span data-lang="inventory">Inventory</span>
-    </button>
     <button data-tab="grocery">
       <span class="tab-icon">&#128722;</span>
-      <span data-lang="groceryList">Grocery List</span>
+      <span data-lang="groceryList">Compras</span>
     </button>
   </div>
 
@@ -413,7 +392,6 @@ function switchTab(tabName) {
     }
   }
   if (tabName === 'mealplan') renderMealPlan();
-  if (tabName === 'inventory') renderInventory();
   if (tabName === 'grocery') renderGroceryList();
   localStorage.setItem('menuapp-active-tab', tabName);
 }
@@ -1503,69 +1481,35 @@ function setInventoryAmount(name, unit, amount) {
   saveInventory();
 }
 
-// ===== INVENTORY TAB =====
-function renderInventory() {
-  const container = document.getElementById('tab-inventory');
-  const needed = getWeekNeededIngredients();
-
-  container.innerHTML = `
-    ${needed.length === 0 ? `<div class="empty-state">${t('inventoryEmpty')}</div>` :
-      needed.map((ing, i) => {
-        const onHand = getInventoryAmount(ing.name, ing.unit);
-        const enough = onHand >= ing.amount;
-        return `<div class="inv-row">
-          <span class="inv-name">${tName(ing.name)}</span>
-          <input type="number" class="inv-input" value="${onHand || ''}" placeholder="" min="0" step="any"
-            data-name='${JSON.stringify(ing.name)}' data-unit="${ing.unit}"
-            style="width:60px;text-align:right;padding:6px 8px;border-radius:6px;border:1px solid #ddd;font-size:14px;font-weight:600;${enough ? 'color:#16a34a;background:#f0fdf4' : 'color:#2563eb'}">
-          <span class="inv-unit" style="min-width:70px">${ing.unit} <span style="color:#bbb;font-size:11px">/ ${ing.amount}</span></span>
-        </div>`;
-      }).join('')}
-  `;
-
-  // Save on input change
-  container.querySelectorAll('.inv-input').forEach(el => {
-    el.addEventListener('change', () => {
-      const name = JSON.parse(el.dataset.name);
-      const unit = el.dataset.unit;
-      const parsed = parseFloat(el.value) || 0;
-      setInventoryAmount(name, unit, parsed);
-      // Update styling
-      const needed = getWeekNeededIngredients();
-      const match = needed.find(n => invKey(n) === invKey({ name, unit }));
-      const enough = match && parsed >= match.amount;
-      el.style.color = enough ? '#16a34a' : '#2563eb';
-      el.style.background = enough ? '#f0fdf4' : '';
-      // Auto-update grocery list if visible
-      if (document.getElementById('tab-grocery').classList.contains('active')) renderGroceryList();
-    });
-  });
-}
-
 function renderGroceryList() {
   const container = document.getElementById('tab-grocery');
-
-  // Auto-compute grocery items from meal plan minus inventory
   const needed = getWeekNeededIngredients();
-  const autoItems = needed.map(item => {
-    const onHand = getInventoryAmount(item.name, item.unit);
-    const remaining = item.amount - onHand;
-    if (remaining <= 0 || remaining < item.amount * 0.1) return null;
-    return { name: item.name, amount: +remaining.toFixed(1), unit: item.unit };
-  }).filter(Boolean);
-
   const hasManual = groceryData.manualItems && groceryData.manualItems.length > 0;
-  const hasItems = autoItems.length > 0 || hasManual;
+  const hasNeeded = needed.length > 0;
 
   container.innerHTML = `
-    ${!hasItems ? `<div class="empty-state">${t('noItemsYet')}</div>` : ''}
-    ${autoItems.length > 0 ? `
-      ${autoItems.map((item, i) => `
-        <div class="check-item" data-type="auto" data-idx="${i}">
-          <span class="check-label">${typeof item.name === 'object' ? tName(item.name) : item.name}</span>
-          <span class="check-amount">${item.amount} ${item.unit}</span>
-        </div>
-      `).join('')}
+    ${!hasNeeded && !hasManual ? `<div class="empty-state">${t('noItemsYet')}</div>` : ''}
+    ${hasNeeded ? `
+      <div style="display:grid;grid-template-columns:1fr 55px 55px 55px;gap:4px;padding:6px 0;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;">
+        <span></span>
+        <span style="text-align:center">Tengo</span>
+        <span style="text-align:center">Necesito</span>
+        <span style="text-align:center">Comprar</span>
+      </div>
+      ${needed.map(ing => {
+        const onHand = getInventoryAmount(ing.name, ing.unit);
+        const toBuy = Math.max(0, +(ing.amount - onHand).toFixed(1));
+        const enough = onHand >= ing.amount;
+        const skipThreshold = toBuy > 0 && toBuy < ing.amount * 0.1;
+        return `<div style="display:grid;grid-template-columns:1fr 55px 55px 55px;gap:4px;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;${enough || skipThreshold ? 'opacity:0.4' : ''}">
+          <span style="font-size:14px;${enough || skipThreshold ? 'text-decoration:line-through' : ''}">${tName(ing.name)} <span style="font-size:11px;color:#999">(${ing.unit})</span></span>
+          <input type="number" class="inv-input" value="${onHand || ''}" placeholder="0" min="0" step="any"
+            data-name='${JSON.stringify(ing.name)}' data-unit="${ing.unit}"
+            style="width:55px;text-align:center;padding:5px 2px;border-radius:6px;border:1px solid #ddd;font-size:13px;font-weight:600;${enough ? 'color:#16a34a;background:#f0fdf4' : 'color:#2563eb'}">
+          <span style="text-align:center;font-size:13px;color:#888">${ing.amount}</span>
+          <span style="text-align:center;font-size:13px;font-weight:700;${enough || skipThreshold ? 'color:#16a34a' : 'color:#dc2626'}">${enough || skipThreshold ? '✓' : toBuy}</span>
+        </div>`;
+      }).join('')}
     ` : ''}
     ${hasManual ? `
       <div class="section-title">${t('manualItems')}</div>
@@ -1577,11 +1521,22 @@ function renderGroceryList() {
       `).join('')}
     ` : ''}
     <div style="display:flex;gap:8px;margin-top:16px">
-      <input type="text" id="manualItemInput" data-lang-placeholder="addItem" placeholder="${t('addItem')}">
+      <input type="text" id="manualItemInput" placeholder="${t('addItem')}">
       <button class="btn btn-primary btn-sm" id="addManualBtn">+</button>
     </div>
     ${hasManual ? `<button class="btn btn-sm btn-secondary" id="clearCheckedBtn" style="margin-top:8px">${t('clearChecked')}</button>` : ''}
   `;
+
+  // Save inventory on input change
+  container.querySelectorAll('.inv-input').forEach(el => {
+    el.addEventListener('change', () => {
+      const name = JSON.parse(el.dataset.name);
+      const unit = el.dataset.unit;
+      const parsed = parseFloat(el.value) || 0;
+      setInventoryAmount(name, unit, parsed);
+      renderGroceryList();
+    });
+  });
 
   // Check/uncheck manual items
   container.querySelectorAll('.check-item[data-type="manual"]').forEach(item => {
@@ -1625,7 +1580,8 @@ updateLangUI();
 // Always reset recipe view on page load so we don't get stuck on a deleted recipe
 localStorage.setItem('menuapp-view', 'list');
 localStorage.removeItem('menuapp-viewing-recipe');
-const initTab = localStorage.getItem('menuapp-active-tab') || 'mealplan';
+let initTab = localStorage.getItem('menuapp-active-tab') || 'mealplan';
+if (initTab === 'inventory') initTab = 'grocery';
 switchTab(initTab);
   </script>
 </body>
