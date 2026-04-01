@@ -260,6 +260,7 @@
     <h1>Menu App</h1>
     <div class="top-bar-actions">
       <button class="lang-toggle" id="langToggle">EN</button>
+      <button class="settings-btn" id="syncBtn" title="Sync">&#9729;</button>
       <button class="settings-btn" id="settingsBtn">&#9881;</button>
     </div>
   </div>
@@ -304,6 +305,14 @@
         <li id="exportBtn"><span data-lang="exportData">Export Data</span> <span>&#8594;</span></li>
         <li id="importBtn"><span data-lang="importData">Import Data</span> <span>&#8594;</span></li>
       </ul>
+      <div style="margin-top:16px;border-top:1px solid #f0f0f0;padding-top:16px">
+        <label style="font-size:13px;font-weight:600;color:#555" data-lang="githubToken">GitHub Token</label>
+        <p style="font-size:12px;color:#999;margin:4px 0 8px" data-lang="tokenHelp">Create a token at GitHub → Settings → Developer Settings → Personal Access Tokens with 'gist' scope.</p>
+        <div style="display:flex;gap:8px">
+          <input type="password" id="ghTokenInput" placeholder="ghp_..." style="flex:1">
+          <button class="btn btn-primary btn-sm" id="saveTokenBtn" data-lang="save">Save</button>
+        </div>
+      </div>
       <div class="modal-actions">
         <button class="btn btn-secondary btn-full" id="settingsClose" data-lang="cancel">Cancel</button>
       </div>
@@ -341,6 +350,8 @@ const STORAGE_KEYS = {
   mealHistory: 'menuapp-meal-history',
   checklistPattern: 'menuapp-checklist-pattern',
   inventory: 'menuapp-inventory',
+  ghToken: 'menuapp-gh-token',
+  gistId: 'menuapp-gist-id',
 };
 
 let currentLang = localStorage.getItem(STORAGE_KEYS.lang) || 'en';
@@ -422,7 +433,11 @@ document.getElementById('langToggle').addEventListener('click', () => {
 
 // ===== SETTINGS MODAL =====
 const settingsModal = document.getElementById('settingsModal');
-document.getElementById('settingsBtn').addEventListener('click', () => settingsModal.classList.add('active'));
+document.getElementById('settingsBtn').addEventListener('click', () => {
+  const saved = localStorage.getItem(STORAGE_KEYS.ghToken) || '';
+  document.getElementById('ghTokenInput').value = saved;
+  settingsModal.classList.add('active');
+});
 document.getElementById('settingsClose').addEventListener('click', () => settingsModal.classList.remove('active'));
 settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) settingsModal.classList.remove('active'); });
 
@@ -520,6 +535,122 @@ document.getElementById('importMergeBtn').addEventListener('click', () => applyI
 document.getElementById('importReplaceBtn').addEventListener('click', () => applyImport('replace'));
 document.getElementById('importCancelBtn').addEventListener('click', () => { pendingImportData = null; importModal.classList.remove('active'); });
 importModal.addEventListener('click', (e) => { if (e.target === importModal) { pendingImportData = null; importModal.classList.remove('active'); } });
+
+// ===== GITHUB GIST SYNC =====
+document.getElementById('saveTokenBtn').addEventListener('click', () => {
+  const token = document.getElementById('ghTokenInput').value.trim();
+  if (!token) return;
+  localStorage.setItem(STORAGE_KEYS.ghToken, token);
+  showToast(t('tokenSaved'));
+});
+
+document.getElementById('syncBtn').addEventListener('click', () => {
+  const token = localStorage.getItem(STORAGE_KEYS.ghToken);
+  if (!token) {
+    showToast(t('syncNoToken'));
+    settingsModal.classList.add('active');
+    return;
+  }
+  showSyncModal();
+});
+
+function showSyncModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>${t('sync')}</h2>
+      <p style="margin-bottom:16px">${t('syncDirection')}</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-primary btn-full" id="syncUpBtn">${t('syncUpload')}</button>
+        <button class="btn btn-secondary btn-full" id="syncDownBtn">${t('syncDownload')}</button>
+        <button class="btn btn-secondary btn-full" id="syncCancelBtn">${t('cancel')}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  modal.querySelector('#syncCancelBtn').addEventListener('click', () => modal.remove());
+  modal.querySelector('#syncUpBtn').addEventListener('click', async () => {
+    modal.remove();
+    await syncUpload();
+  });
+  modal.querySelector('#syncDownBtn').addEventListener('click', async () => {
+    modal.remove();
+    await syncDownload();
+  });
+}
+
+function getSyncData() {
+  return {
+    customRecipes, mealPlan, groceryData, inventoryData, mealHistory, checklistPattern,
+    syncedAt: new Date().toISOString()
+  };
+}
+
+function applySyncData(data) {
+  customRecipes = data.customRecipes || [];
+  mealPlan = data.mealPlan || {};
+  groceryData = data.groceryData || { autoItems: [], manualItems: [] };
+  inventoryData = data.inventoryData || { items: [], customItems: [] };
+  mealHistory = data.mealHistory || [];
+  checklistPattern = data.checklistPattern || null;
+  saveRecipes(); saveMealPlan(); saveGroceries(); saveInventory(); saveMealHistory(); saveChecklistPattern();
+  const activeTab = document.querySelector('.tab-bar button.active').dataset.tab;
+  switchTab(activeTab);
+}
+
+async function syncUpload() {
+  const token = localStorage.getItem(STORAGE_KEYS.ghToken);
+  const gistId = localStorage.getItem(STORAGE_KEYS.gistId);
+  const payload = { files: { 'menu-app-data.json': { content: JSON.stringify(getSyncData(), null, 2) } } };
+
+  try {
+    let res;
+    if (gistId) {
+      res = await fetch('https://api.github.com/gists/' + gistId, {
+        method: 'PATCH',
+        headers: { 'Authorization': 'token ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    } else {
+      payload.description = 'Menu App Sync Data';
+      payload.public = false;
+      res = await fetch('https://api.github.com/gists', {
+        method: 'POST',
+        headers: { 'Authorization': 'token ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    }
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    localStorage.setItem(STORAGE_KEYS.gistId, data.id);
+    showToast(t('syncSuccess'));
+  } catch (e) {
+    showToast(t('syncError'));
+  }
+}
+
+async function syncDownload() {
+  const token = localStorage.getItem(STORAGE_KEYS.ghToken);
+  const gistId = localStorage.getItem(STORAGE_KEYS.gistId);
+  if (!gistId) { showToast(t('syncError')); return; }
+
+  try {
+    const res = await fetch('https://api.github.com/gists/' + gistId, {
+      headers: { 'Authorization': 'token ' + token }
+    });
+    if (!res.ok) throw new Error(res.status);
+    const gist = await res.json();
+    const content = gist.files['menu-app-data.json']?.content;
+    if (!content) throw new Error('No data file in gist');
+    const data = JSON.parse(content);
+    applySyncData(data);
+    showToast(t('syncSuccess'));
+  } catch (e) {
+    showToast(t('syncError'));
+  }
+}
 
 // ===== RENDER STUBS (implemented in next tasks) =====
 let currentCategory = 'all';

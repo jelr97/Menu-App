@@ -99,6 +99,19 @@ const LANG = {
   lunchShort: { en: "Lunch", es: "Almuerzo" },
   dinnerShort: { en: "Dinner", es: "Cena" },
 
+  // Sync
+  sync: { en: "Sync", es: "Sincronizar" },
+  syncUpload: { en: "Upload to Cloud", es: "Subir a la Nube" },
+  syncDownload: { en: "Download from Cloud", es: "Descargar de la Nube" },
+  syncSuccess: { en: "Synced!", es: "¡Sincronizado!" },
+  syncError: { en: "Sync failed. Check your token.", es: "Error de sincronización. Verifica tu token." },
+  syncNoToken: { en: "Set your GitHub token in Settings first.", es: "Configura tu token de GitHub en Configuración primero." },
+  syncDirection: { en: "Sync direction?", es: "¿Dirección de sincronización?" },
+  githubToken: { en: "GitHub Token", es: "Token de GitHub" },
+  tokenPlaceholder: { en: "Paste your GitHub token...", es: "Pega tu token de GitHub..." },
+  tokenSaved: { en: "Token saved!", es: "¡Token guardado!" },
+  tokenHelp: { en: "Create a token at GitHub → Settings → Developer Settings → Personal Access Tokens with 'gist' scope.", es: "Crea un token en GitHub → Settings → Developer Settings → Personal Access Tokens con permiso 'gist'." },
+
   // Confirmations
   confirmDelete: { en: "Delete this recipe?", es: "¿Eliminar esta receta?" },
   confirmImportReplace: { en: "This will replace all your current data. Continue?", es: "Esto reemplazará todos tus datos actuales. ¿Continuar?" },
