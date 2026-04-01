@@ -419,7 +419,13 @@ function switchTab(tabName) {
   localStorage.setItem('menuapp-active-tab', tabName);
 }
 
-tabButtons.forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+tabButtons.forEach(btn => btn.addEventListener('click', () => {
+  if (btn.dataset.tab === 'recipes') {
+    localStorage.setItem('menuapp-view', 'list');
+    localStorage.removeItem('menuapp-viewing-recipe');
+  }
+  switchTab(btn.dataset.tab);
+}));
 
 // ===== SETTINGS MODAL =====
 const settingsModal = document.getElementById('settingsModal');
