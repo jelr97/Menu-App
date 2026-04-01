@@ -705,7 +705,7 @@ function renderRecipesList() {
       data-lang-placeholder="search" data-t-placeholder="search" placeholder="${t('search')}"
       style="margin-bottom:8px;">
     <div class="chip-row">
-      ${['all','breakfast','lunch','dinner','snack'].map(cat =>
+      ${['all','breakfast','lunch','dinner'].map(cat =>
         `<button class="chip ${currentCategory === cat ? 'active' : ''}" data-cat="${cat}" data-t="${cat}">
           ${t(cat)}
         </button>`
@@ -949,7 +949,7 @@ function openRecipeForm(existingRecipe) {
     <div class="mb-8">
       <label style="font-size:13px;color:#888" data-t="category">${t('category')}</label>
       <select id="rCategory">
-        ${['breakfast','lunch','dinner','snack'].map(cat =>
+        ${['breakfast','lunch','dinner'].map(cat =>
           `<option value="${cat}" ${r.category === cat ? 'selected' : ''} data-t="${cat}">${t(cat)}</option>`
         ).join('')}
       </select>
@@ -1318,7 +1318,7 @@ function renderMealPlan() {
         const key = dateKey(d);
         const isToday = key === todayKey;
         const meals = mealPlan[key] || [];
-        const slotOrder = ['breakfast','lunch','dinner','snack'];
+        const slotOrder = ['breakfast','lunch','dinner'];
         const sorted = [...meals].sort((a, b) => {
           const ai = slotOrder.indexOf(a.slot) >= 0 ? slotOrder.indexOf(a.slot) : 99;
           const bi = slotOrder.indexOf(b.slot) >= 0 ? slotOrder.indexOf(b.slot) : 99;
@@ -1389,7 +1389,7 @@ function openAddMealFlow(dateStr) {
     <div class="modal">
       <h2>${t('selectSlot')}</h2>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${['breakfast','lunch','dinner','snack'].map(slot =>
+        ${['breakfast','lunch','dinner'].map(slot =>
           `<button class="btn btn-secondary btn-full slot-pick" data-slot="${slot}">${t(slot)}</button>`
         ).join('')}
         <button class="btn btn-secondary btn-full slot-pick" data-slot="custom">${t('customSlot')}</button>
