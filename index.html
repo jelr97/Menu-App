@@ -1400,7 +1400,8 @@ function openAddMealFlow(dateStr) {
 }
 
 function openRecipePicker(dateStr, slot, replaceMealIdx) {
-  const recipes = getAllRecipes();
+  const baseSlot = slot.startsWith('custom:') ? null : slot;
+  const recipes = getAllRecipes().filter(r => !baseSlot || r.category === baseSlot);
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
   modal.innerHTML = `
