@@ -405,7 +405,17 @@ function switchTab(tabName) {
   // Hide FAB when not on recipes list
   const fab = document.getElementById('recipeFab');
   if (fab) fab.classList.toggle('hidden', tabName !== 'recipes');
-  if (tabName === 'recipes') renderRecipesList();
+  if (tabName === 'recipes') {
+    const savedView = localStorage.getItem('menuapp-view');
+    const savedRecipeId = localStorage.getItem('menuapp-viewing-recipe');
+    if (savedView === 'detail' && savedRecipeId && getRecipeById(savedRecipeId)) {
+      renderRecipeDetail(savedRecipeId);
+    } else if (savedView === 'form' && savedRecipeId && getRecipeById(savedRecipeId)) {
+      openRecipeForm(getRecipeById(savedRecipeId));
+    } else {
+      renderRecipesList();
+    }
+  }
   if (tabName === 'mealplan') renderMealPlan();
   if (tabName === 'inventory') renderInventory();
   if (tabName === 'grocery') renderGroceryList();
@@ -670,12 +680,14 @@ async function syncDownload() {
 // ===== RENDER STUBS (implemented in next tasks) =====
 let currentCategory = 'all';
 let currentSearch = '';
-let currentView = 'list'; // 'list' or 'detail'
-let viewingRecipeId = null;
+let currentView = localStorage.getItem('menuapp-view') || 'list';
+let viewingRecipeId = localStorage.getItem('menuapp-viewing-recipe') || null;
 
 function renderRecipesList() {
   currentView = 'list';
   viewingRecipeId = null;
+  localStorage.setItem('menuapp-view', 'list');
+  localStorage.removeItem('menuapp-viewing-recipe');
   const container = document.getElementById('tab-recipes');
   const recipes = getAllRecipes();
   const filtered = recipes.filter(r => {
@@ -742,6 +754,8 @@ function renderRecipesList() {
 function renderRecipeDetail(recipeId) {
   currentView = 'detail';
   viewingRecipeId = recipeId;
+  localStorage.setItem('menuapp-view', 'detail');
+  localStorage.setItem('menuapp-viewing-recipe', recipeId);
   const recipe = getRecipeById(recipeId);
   if (!recipe) return renderRecipesList();
 
@@ -904,6 +918,8 @@ function saveIngredientEdit(recipe, ingredientIdx, newBaseAmount) {
 
 function openRecipeForm(existingRecipe) {
   currentView = 'form';
+  localStorage.setItem('menuapp-view', 'form');
+  if (existingRecipe) localStorage.setItem('menuapp-viewing-recipe', existingRecipe.id);
   const container = document.getElementById('tab-recipes');
   const fab = document.getElementById('recipeFab');
   if (fab) fab.classList.add('hidden');
