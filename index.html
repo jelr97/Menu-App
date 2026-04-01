@@ -346,7 +346,7 @@ const STORAGE_KEYS = {
   gistId: 'menuapp-gist-id',
 };
 
-let currentLang = localStorage.getItem(STORAGE_KEYS.lang) || 'en';
+let currentLang = localStorage.getItem(STORAGE_KEYS.lang) || 'es';
 let customRecipes = JSON.parse(localStorage.getItem(STORAGE_KEYS.recipes) || '[]');
 let mealPlan = JSON.parse(localStorage.getItem(STORAGE_KEYS.mealplan) || '{}');
 let groceryData = JSON.parse(localStorage.getItem(STORAGE_KEYS.groceries) || '{"autoItems":[],"manualItems":[]}');
