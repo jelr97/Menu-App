@@ -206,6 +206,28 @@
     }
     .toast.show { opacity: 1; }
 
+    /* ===== CHECKLIST GRID ===== */
+    .checklist-grid {
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .checklist-header {
+      display: grid; grid-template-columns: 50px 1fr 1fr 1fr; gap: 6px;
+      font-size: 11px; font-weight: 700; color: #888; text-transform: uppercase;
+      margin-bottom: 4px; padding: 0 4px;
+    }
+    .checklist-header span { text-align: center; }
+    .checklist-row {
+      display: grid; grid-template-columns: 50px 1fr 1fr 1fr; gap: 6px;
+      align-items: center; padding: 10px 4px;
+      background: #fff; border-radius: 8px; border: 1px solid #e5e5e5;
+    }
+    .checklist-row .day-label { font-weight: 600; font-size: 13px; }
+    .checklist-row .day-label.today { color: #2563eb; }
+    .checklist-row .cb-cell { text-align: center; }
+    .checklist-row .cb-cell input[type="checkbox"] {
+      width: 22px; height: 22px; accent-color: #2563eb; cursor: pointer;
+    }
+
     /* ===== UTILITY ===== */
     .section-title { font-size: 14px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 8px; }
     .empty-state { text-align: center; padding: 40px 16px; color: #999; font-size: 14px; }
@@ -294,17 +316,23 @@ const STORAGE_KEYS = {
   mealplan: 'menuapp-mealplan',
   groceries: 'menuapp-groceries',
   lang: 'menuapp-lang',
+  mealHistory: 'menuapp-meal-history',
+  checklistPattern: 'menuapp-checklist-pattern',
 };
 
 let currentLang = localStorage.getItem(STORAGE_KEYS.lang) || 'en';
 let customRecipes = JSON.parse(localStorage.getItem(STORAGE_KEYS.recipes) || '[]');
 let mealPlan = JSON.parse(localStorage.getItem(STORAGE_KEYS.mealplan) || '{}');
 let groceryData = JSON.parse(localStorage.getItem(STORAGE_KEYS.groceries) || '{"autoItems":[],"manualItems":[]}');
+let mealHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.mealHistory) || '[]');
+let checklistPattern = JSON.parse(localStorage.getItem(STORAGE_KEYS.checklistPattern) || 'null');
 
 function saveRecipes() { localStorage.setItem(STORAGE_KEYS.recipes, JSON.stringify(customRecipes)); }
 function saveMealPlan() { localStorage.setItem(STORAGE_KEYS.mealplan, JSON.stringify(mealPlan)); }
 function saveGroceries() { localStorage.setItem(STORAGE_KEYS.groceries, JSON.stringify(groceryData)); }
 function saveLang() { localStorage.setItem(STORAGE_KEYS.lang, currentLang); }
+function saveMealHistory() { localStorage.setItem(STORAGE_KEYS.mealHistory, JSON.stringify(mealHistory)); }
+function saveChecklistPattern() { localStorage.setItem(STORAGE_KEYS.checklistPattern, JSON.stringify(checklistPattern)); }
 
 function getAllRecipes() {
   const overrideIds = customRecipes.filter(r => r.overrides).map(r => r.overrides);
@@ -854,16 +882,251 @@ function dateKey(d) {
   return d.toISOString().split('T')[0];
 }
 
-function renderMealPlan() {
+// ===== CHECKLIST VIEW & GENERATION =====
+const DAY_NAMES = ['mon','tue','wed','thu','fri','sat','sun'];
+const MEAL_SLOTS = ['breakfast','lunch','dinner'];
+
+function renderChecklistView() {
   const container = document.getElementById('tab-mealplan');
   const weekDates = getWeekDates();
-  const dayNames = ['mon','tue','wed','thu','fri','sat','sun'];
+  const todayKey = dateKey(new Date());
+
+  // Load pattern or default to all unchecked
+  const pattern = checklistPattern || {};
+
+  container.innerHTML = `
+    <div class="section-title" style="margin-top:0">${t('generatePlan')}</div>
+    <div class="checklist-header">
+      <span></span>
+      <span>${t('brkfst')}</span>
+      <span>${t('lunchShort')}</span>
+      <span>${t('dinnerShort')}</span>
+    </div>
+    <div class="checklist-grid">
+      ${weekDates.map((d, i) => {
+        const dn = DAY_NAMES[i];
+        const isToday = dateKey(d) === todayKey;
+        const dp = pattern[dn] || {};
+        return `<div class="checklist-row">
+          <div class="day-label ${isToday ? 'today' : ''}">${t(dn)}</div>
+          ${MEAL_SLOTS.map(slot => `
+            <div class="cb-cell">
+              <input type="checkbox" data-day="${dn}" data-slot="${slot}"
+                ${dp[slot] ? 'checked' : ''}>
+            </div>
+          `).join('')}
+        </div>`;
+      }).join('')}
+    </div>
+    <button class="btn btn-primary btn-full" id="generateBtn" style="margin-top:16px">${t('generatePlan')}</button>
+    ${weekHasMeals() ? `<button class="btn btn-secondary btn-full" id="backToWeekBtn" style="margin-top:8px">${t('cancel')}</button>` : ''}
+  `;
+
+  // Save pattern on each checkbox change
+  container.querySelectorAll('.checklist-grid input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (!checklistPattern) checklistPattern = {};
+      const dn = cb.dataset.day;
+      const slot = cb.dataset.slot;
+      if (!checklistPattern[dn]) checklistPattern[dn] = {};
+      checklistPattern[dn][slot] = cb.checked;
+      saveChecklistPattern();
+    });
+  });
+
+  // Generate button
+  document.getElementById('generateBtn').addEventListener('click', () => {
+    const selections = collectChecklistSelections();
+    if (selections.length === 0) { showToast('Check at least one meal'); return; }
+
+    if (weekHasMeals()) {
+      showReplaceOrFillModal(selections);
+    } else {
+      runGeneration(selections, 'replace');
+    }
+  });
+
+  // Back to weekly view button
+  const backBtn = document.getElementById('backToWeekBtn');
+  if (backBtn) backBtn.addEventListener('click', renderMealPlan);
+}
+
+function collectChecklistSelections() {
+  const selections = [];
+  const weekDates = getWeekDates();
+  document.querySelectorAll('.checklist-grid input[type="checkbox"]:checked').forEach(cb => {
+    const dayIdx = DAY_NAMES.indexOf(cb.dataset.day);
+    selections.push({
+      date: dateKey(weekDates[dayIdx]),
+      dayName: cb.dataset.day,
+      slot: cb.dataset.slot
+    });
+  });
+  return selections;
+}
+
+function weekHasMeals() {
+  const weekDates = getWeekDates();
+  return weekDates.some(d => (mealPlan[dateKey(d)] || []).length > 0);
+}
+
+function showReplaceOrFillModal(selections) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `
+    <div class="modal">
+      <h2>${t('generatePlan')}</h2>
+      <p>${t('replaceOrFill')}</p>
+      <div class="modal-actions" style="flex-direction:column">
+        <button class="btn btn-danger btn-full" id="genReplaceBtn">${t('replaceAll')}</button>
+        <button class="btn btn-primary btn-full" id="genFillBtn">${t('fillEmpty')}</button>
+        <button class="btn btn-secondary btn-full" id="genCancelBtn">${t('cancel')}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+  modal.querySelector('#genCancelBtn').addEventListener('click', () => modal.remove());
+  modal.querySelector('#genReplaceBtn').addEventListener('click', () => {
+    modal.remove();
+    runGeneration(selections, 'replace');
+  });
+  modal.querySelector('#genFillBtn').addEventListener('click', () => {
+    modal.remove();
+    runGeneration(selections, 'fill');
+  });
+}
+
+function runGeneration(selections, mode) {
+  const weekDates = getWeekDates();
+
+  if (mode === 'replace') {
+    weekDates.forEach(d => delete mealPlan[dateKey(d)]);
+  }
+
+  // Filter out slots that already have a meal in fill mode
+  let slotsToFill = selections;
+  if (mode === 'fill') {
+    slotsToFill = selections.filter(sel => {
+      const existing = mealPlan[sel.date] || [];
+      return !existing.some(m => m.slot === sel.slot);
+    });
+  }
+
+  // Group by category to process most-constrained first
+  const allRecipes = getAllRecipes();
+  const byCategory = {};
+  MEAL_SLOTS.forEach(slot => {
+    byCategory[slot] = allRecipes.filter(r => r.category === slot);
+  });
+
+  // Check for empty categories
+  const missingCategories = MEAL_SLOTS.filter(slot =>
+    slotsToFill.some(s => s.slot === slot) && byCategory[slot].length === 0
+  );
+  if (missingCategories.length > 0) {
+    const names = missingCategories.map(c => t(c)).join(', ');
+    showToast(t('noRecipesInCategory') + names);
+    slotsToFill = slotsToFill.filter(s => !missingCategories.includes(s.slot));
+  }
+
+  if (slotsToFill.length === 0) { renderMealPlan(); return; }
+
+  // Sort by most constrained (fewest recipes in category first)
+  slotsToFill.sort((a, b) => byCategory[a.slot].length - byCategory[b.slot].length);
+
+  const assigned = []; // track { recipeId, date, slot } for within-week uniqueness
+
+  slotsToFill.forEach(sel => {
+    const candidates = byCategory[sel.slot];
+    if (candidates.length === 0) return;
+
+    const scored = scoreRecipes(candidates, sel.date, sel.dayName, assigned);
+    const pick = scored[0];
+
+    if (!mealPlan[sel.date]) mealPlan[sel.date] = [];
+    mealPlan[sel.date].push({ slot: sel.slot, recipeId: pick.id });
+    assigned.push({ recipeId: pick.id, date: sel.date, slot: sel.slot });
+    mealHistory.push({ recipeId: pick.id, date: sel.date, slot: sel.slot });
+  });
+
+  saveMealPlan();
+  saveMealHistory();
+  renderMealPlan();
+}
+
+function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned) {
+  const today = new Date();
+  const todayMs = today.getTime();
+
+  const scored = candidates.map(recipe => {
+    let score = 0;
+
+    // 1. Recency score: days since last used (higher = better)
+    const lastUse = [...mealHistory].reverse().find(h => h.recipeId === recipe.id);
+    if (lastUse) {
+      const lastDate = new Date(lastUse.date);
+      const daysSince = Math.max(1, Math.floor((todayMs - lastDate.getTime()) / 86400000));
+      score += daysSince;
+    } else {
+      score += 9999; // never used = max score
+    }
+
+    // 2. Same-weekday penalty
+    const sameWeekdayUses = mealHistory.filter(h =>
+      h.recipeId === recipe.id && getDayNameFromDate(h.date) === dayName
+    );
+    sameWeekdayUses.forEach(use => {
+      const useDate = new Date(use.date);
+      const weeksSince = Math.max(1, Math.floor((todayMs - useDate.getTime()) / (7 * 86400000)));
+      score -= 50 / weeksSince;
+    });
+
+    // 3. Within-week uniqueness penalty
+    const usedThisWeek = alreadyAssigned.filter(a => a.recipeId === recipe.id).length;
+    score -= usedThisWeek * 500;
+
+    // Random tiebreaker
+    score += Math.random() * 0.5;
+
+    return { ...recipe, _score: score };
+  });
+
+  scored.sort((a, b) => b._score - a._score);
+  return scored;
+}
+
+function getDayNameFromDate(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const dayIdx = (d.getDay() + 6) % 7; // 0=Mon
+  return DAY_NAMES[dayIdx];
+}
+
+function addToMealHistory(recipeId, date, slot) {
+  mealHistory.push({ recipeId, date, slot });
+  saveMealHistory();
+}
+
+// ===== MEAL PLAN WEEKLY VIEW =====
+function renderMealPlan() {
+  // If no meals this week, show checklist instead
+  if (!weekHasMeals()) {
+    renderChecklistView();
+    return;
+  }
+
+  const container = document.getElementById('tab-mealplan');
+  const weekDates = getWeekDates();
+  const dayNames = DAY_NAMES;
   const todayKey = dateKey(new Date());
 
   container.innerHTML = `
     <div class="flex-between mb-8">
       <div class="section-title" style="margin:0">${t('mealPlan')}</div>
-      <button class="btn btn-sm btn-danger" id="clearWeekBtn">${t('clearWeek')}</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-primary" id="newPlanBtn">${t('newPlan')}</button>
+        <button class="btn btn-sm btn-danger" id="clearWeekBtn">${t('clearWeek')}</button>
+      </div>
     </div>
     <div class="week-row">
       ${weekDates.map((d, i) => {
@@ -894,6 +1157,9 @@ function renderMealPlan() {
       }).join('')}
     </div>
   `;
+
+  // New Plan button
+  document.getElementById('newPlanBtn').addEventListener('click', renderChecklistView);
 
   // Clear week
   document.getElementById('clearWeekBtn').addEventListener('click', () => {
@@ -1008,6 +1274,7 @@ function openRecipePicker(dateStr, slot) {
       if (!mealPlan[dateStr]) mealPlan[dateStr] = [];
       mealPlan[dateStr].push({ slot, recipeId: card.dataset.id });
       saveMealPlan();
+      addToMealHistory(card.dataset.id, dateStr, slot);
       modal.remove();
       renderMealPlan();
     });

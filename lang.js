@@ -78,6 +78,17 @@ const LANG = {
   removeIngredient: { en: "Remove", es: "Quitar" },
   removeStep: { en: "Remove", es: "Quitar" },
 
+  // Generate Meal Plan
+  generatePlan: { en: "Generate Plan", es: "Generar Plan" },
+  newPlan: { en: "New Plan", es: "Nuevo Plan" },
+  replaceOrFill: { en: "Replace all meals or fill empty slots?", es: "¿Reemplazar todas las comidas o llenar espacios vacíos?" },
+  replaceAll: { en: "Replace All", es: "Reemplazar Todo" },
+  fillEmpty: { en: "Fill Empty", es: "Llenar Vacíos" },
+  noRecipesInCategory: { en: "No recipes available for: ", es: "No hay recetas disponibles para: " },
+  brkfst: { en: "Brkfst", es: "Desay." },
+  lunchShort: { en: "Lunch", es: "Almzo." },
+  dinnerShort: { en: "Dinner", es: "Cena" },
+
   // Confirmations
   confirmDelete: { en: "Delete this recipe?", es: "¿Eliminar esta receta?" },
   confirmImportReplace: { en: "This will replace all your current data. Continue?", es: "Esto reemplazará todos tus datos actuales. ¿Continuar?" },
