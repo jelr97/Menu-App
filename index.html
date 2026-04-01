@@ -633,10 +633,22 @@ async function syncUpload() {
 
 async function syncDownload() {
   const token = localStorage.getItem(STORAGE_KEYS.ghToken);
-  const gistId = localStorage.getItem(STORAGE_KEYS.gistId);
-  if (!gistId) { showToast(t('syncError')); return; }
+  let gistId = localStorage.getItem(STORAGE_KEYS.gistId);
 
   try {
+    // If no gist ID stored locally, find it by searching user's gists
+    if (!gistId) {
+      const listRes = await fetch('https://api.github.com/gists', {
+        headers: { 'Authorization': 'token ' + token }
+      });
+      if (!listRes.ok) throw new Error(listRes.status);
+      const gists = await listRes.json();
+      const found = gists.find(g => g.files['menu-app-data.json']);
+      if (!found) throw new Error('No Menu App gist found');
+      gistId = found.id;
+      localStorage.setItem(STORAGE_KEYS.gistId, gistId);
+    }
+
     const res = await fetch('https://api.github.com/gists/' + gistId, {
       headers: { 'Authorization': 'token ' + token }
     });
