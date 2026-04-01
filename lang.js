@@ -55,13 +55,13 @@ const LANG = {
   importSuccess: { en: "Data imported!", es: "¡Datos importados!" },
 
   // Days
-  mon: { en: "Mon", es: "Lun" },
-  tue: { en: "Tue", es: "Mar" },
-  wed: { en: "Wed", es: "Mié" },
-  thu: { en: "Thu", es: "Jue" },
-  fri: { en: "Fri", es: "Vie" },
-  sat: { en: "Sat", es: "Sáb" },
-  sun: { en: "Sun", es: "Dom" },
+  mon: { en: "Monday", es: "Lunes" },
+  tue: { en: "Tuesday", es: "Martes" },
+  wed: { en: "Wednesday", es: "Miércoles" },
+  thu: { en: "Thursday", es: "Jueves" },
+  fri: { en: "Friday", es: "Viernes" },
+  sat: { en: "Saturday", es: "Sábado" },
+  sun: { en: "Sunday", es: "Domingo" },
 
   // Recipe form
   recipeName: { en: "Recipe name", es: "Nombre de la receta" },
