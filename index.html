@@ -1471,6 +1471,17 @@ function openRecipePicker(dateStr, slot) {
 }
 
 // ===== INVENTORY & GROCERY HELPERS =====
+const PANTRY_STAPLES = new Set([
+  'salt', 'pepper', 'baking powder', 'butter', 'caesar dressing',
+  'all-purpose flour', 'cumin', 'oregano', 'maple syrup', 'mayonnaise',
+  'ketchup', 'olive oil', 'soy sauce', 'sugar'
+]);
+
+function isPantryStaple(name) {
+  const en = (typeof name === 'object' ? name.en : name).toLowerCase();
+  return PANTRY_STAPLES.has(en);
+}
+
 function invKey(item) {
   const nameEn = (typeof item.name === 'object' ? item.name.en : item.name).toLowerCase();
   return nameEn + '|' + item.unit;
@@ -1495,6 +1506,7 @@ function getWeekNeededIngredients() {
     });
   });
   return Object.values(ingredientMap)
+    .filter(item => !isPantryStaple(item.name))
     .map(item => ({ ...item, amount: +item.amount.toFixed(1) }))
     .sort((a, b) => tName(a.name).localeCompare(tName(b.name)));
 }
