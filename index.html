@@ -25,11 +25,6 @@
     }
     .top-bar h1 { font-size: 18px; font-weight: 700; }
     .top-bar-actions { display: flex; gap: 8px; align-items: center; }
-    .lang-toggle {
-      background: none; border: 1px solid #ddd; border-radius: 6px;
-      padding: 4px 10px; font-size: 13px; font-weight: 600; color: #555; cursor: pointer;
-    }
-    .lang-toggle:active { background: #f0f0f0; }
     .settings-btn {
       background: none; border: none; font-size: 20px; cursor: pointer; color: #555;
       padding: 4px;
@@ -251,7 +246,6 @@
   <div class="top-bar">
     <h1>Menu App</h1>
     <div class="top-bar-actions">
-      <button class="lang-toggle" id="langToggle">EN</button>
       <button class="settings-btn" id="syncBtn" title="Sync">&#9729;</button>
       <button class="settings-btn" id="settingsBtn">&#9881;</button>
     </div>
@@ -346,7 +340,7 @@ const STORAGE_KEYS = {
   gistId: 'menuapp-gist-id',
 };
 
-let currentLang = localStorage.getItem(STORAGE_KEYS.lang) || 'es';
+let currentLang = 'es';
 let customRecipes = JSON.parse(localStorage.getItem(STORAGE_KEYS.recipes) || '[]');
 let mealPlan = JSON.parse(localStorage.getItem(STORAGE_KEYS.mealplan) || '{}');
 let groceryData = JSON.parse(localStorage.getItem(STORAGE_KEYS.groceries) || '{"autoItems":[],"manualItems":[]}');
@@ -426,23 +420,6 @@ function switchTab(tabName) {
 }
 
 tabButtons.forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
-
-// ===== LANGUAGE TOGGLE =====
-document.getElementById('langToggle').addEventListener('click', () => {
-  currentLang = currentLang === 'en' ? 'es' : 'en';
-  saveLang();
-  updateLangUI();
-  // Update dynamic text without re-rendering (preserves view state)
-  document.querySelectorAll('[data-t]').forEach(el => {
-    el.textContent = t(el.dataset.t);
-  });
-  document.querySelectorAll('[data-tname]').forEach(el => {
-    try { el.textContent = tName(JSON.parse(el.dataset.tname)); } catch {}
-  });
-  document.querySelectorAll('[data-t-placeholder]').forEach(el => {
-    el.placeholder = t(el.dataset.tPlaceholder);
-  });
-});
 
 // ===== SETTINGS MODAL =====
 const settingsModal = document.getElementById('settingsModal');
@@ -939,12 +916,8 @@ function openRecipeForm(existingRecipe) {
       <h2 data-t="${isEdit ? 'editRecipe' : 'addRecipe'}">${isEdit ? t('editRecipe') : t('addRecipe')}</h2>
     </div>
     <div class="mb-8">
-      <label style="font-size:13px;color:#888" data-t="recipeName">${t('recipeName')} (EN)</label>
-      <input type="text" id="rNameEn" value="${r.name.en || ''}">
-    </div>
-    <div class="mb-8">
-      <label style="font-size:13px;color:#888" data-t="recipeName">${t('recipeName')} (ES)</label>
-      <input type="text" id="rNameEs" value="${r.name.es || ''}">
+      <label style="font-size:13px;color:#888">${t('recipeName')}</label>
+      <input type="text" id="rNameEs" value="${r.name.es || r.name.en || ''}">
     </div>
     <div class="mb-8">
       <label style="font-size:13px;color:#888" data-t="category">${t('category')}</label>
@@ -988,12 +961,12 @@ function openRecipeForm(existingRecipe) {
   });
 
   document.getElementById('saveRecipeBtn').addEventListener('click', () => {
-    const nameEn = document.getElementById('rNameEn').value.trim();
-    if (!nameEn) { showToast('Recipe name (EN) is required'); return; }
+    const name = document.getElementById('rNameEs').value.trim();
+    if (!name) { showToast('El nombre es requerido'); return; }
 
     const newRecipe = {
-      id: isEdit ? r.id : nameEn.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      name: { en: nameEn, es: document.getElementById('rNameEs').value.trim() || nameEn },
+      id: isEdit ? r.id : name.toLowerCase().replace(/[^a-záéíóúñü0-9]+/g, '-'),
+      name: { en: name, es: name },
       category: document.getElementById('rCategory').value,
       servings: parseInt(document.getElementById('rServings').value) || 2,
       prepTime: 0,
@@ -1023,8 +996,7 @@ function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
 
 function ingredientFormRow(ing, idx) {
   return `<div class="ing-row" style="display:flex;gap:4px;margin-bottom:6px;align-items:center">
-    <input type="text" placeholder="EN" value="${esc(ing.name.en)}" style="flex:2" class="ing-name-en" data-idx="${idx}">
-    <input type="text" placeholder="ES" value="${esc(ing.name.es)}" style="flex:2" class="ing-name-es" data-idx="${idx}">
+    <input type="text" placeholder="Ingrediente" value="${esc(ing.name.es || ing.name.en)}" style="flex:3" class="ing-name-es" data-idx="${idx}">
     <input type="number" value="${ing.amount}" style="flex:1" class="ing-amount" data-idx="${idx}" min="0" step="any">
     <select class="ing-unit" data-idx="${idx}" style="flex:1">
       ${['g','kg','ml','l','tbsp','tsp','units','cups'].map(u =>
@@ -1038,14 +1010,14 @@ function ingredientFormRow(ing, idx) {
 
 function collectIngredients() {
   const rows = document.querySelectorAll('.ing-row');
-  return Array.from(rows).map(row => ({
-    name: {
-      en: row.querySelector('.ing-name-en').value.trim(),
-      es: row.querySelector('.ing-name-es').value.trim()
-    },
-    amount: parseFloat(row.querySelector('.ing-amount').value) || 0,
-    unit: row.querySelector('.ing-unit').value
-  })).filter(ing => ing.name.en);
+  return Array.from(rows).map(row => {
+    const name = row.querySelector('.ing-name-es').value.trim();
+    return {
+      name: { en: name, es: name },
+      amount: parseFloat(row.querySelector('.ing-amount').value) || 0,
+      unit: row.querySelector('.ing-unit').value
+    };
+  }).filter(ing => ing.name.es);
 }
 
 
