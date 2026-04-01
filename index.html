@@ -1470,89 +1470,71 @@ function openRecipePicker(dateStr, slot) {
   });
 }
 
-// ===== INVENTORY =====
+// ===== INVENTORY & GROCERY HELPERS =====
 function invKey(item) {
   const nameEn = (typeof item.name === 'object' ? item.name.en : item.name).toLowerCase();
   return nameEn + '|' + item.unit;
 }
 
-function getAllRecipeIngredients() {
-  const recipes = getAllRecipes();
-  const seen = new Set();
-  const ingredients = [];
-  recipes.forEach(r => {
-    r.ingredients.forEach(ing => {
-      const key = (typeof ing.name === 'object' ? ing.name.en : ing.name).toLowerCase() + '|' + ing.unit;
-      if (!seen.has(key)) {
-        seen.add(key);
-        ingredients.push({ name: ing.name, unit: ing.unit });
-      }
+function getWeekNeededIngredients() {
+  const weekDates = getWeekDates();
+  const ingredientMap = {};
+  weekDates.forEach(d => {
+    const meals = mealPlan[dateKey(d)] || [];
+    meals.forEach(meal => {
+      const recipe = getRecipeById(meal.recipeId);
+      if (!recipe) return;
+      recipe.ingredients.forEach(ing => {
+        const nameEn = (typeof ing.name === 'object' ? ing.name.en : ing.name).toLowerCase();
+        const key = nameEn + '|' + ing.unit;
+        if (!ingredientMap[key]) {
+          ingredientMap[key] = { name: ing.name, amount: 0, unit: ing.unit };
+        }
+        ingredientMap[key].amount += ing.amount;
+      });
     });
   });
-  ingredients.sort((a, b) => tName(a.name).localeCompare(tName(b.name)));
-  return ingredients;
+  return Object.values(ingredientMap)
+    .map(item => ({ ...item, amount: +item.amount.toFixed(1) }))
+    .sort((a, b) => tName(a.name).localeCompare(tName(b.name)));
 }
 
 function getInventoryAmount(name, unit) {
   const key = (typeof name === 'object' ? name.en : name).toLowerCase() + '|' + unit;
   const item = inventoryData.items.find(i => invKey(i) === key);
-  if (item) return item.amount;
-  const custom = inventoryData.customItems.find(i => invKey(i) === key);
-  if (custom) return custom.amount;
-  return 0;
+  return item ? item.amount : 0;
 }
 
-function setInventoryAmount(name, unit, amount, isCustom) {
+function setInventoryAmount(name, unit, amount) {
   const key = (typeof name === 'object' ? name.en : name).toLowerCase() + '|' + unit;
-  const list = isCustom ? inventoryData.customItems : inventoryData.items;
-  const existing = list.find(i => invKey(i) === key);
+  const existing = inventoryData.items.find(i => invKey(i) === key);
   if (existing) {
     existing.amount = amount;
   } else {
-    list.push({ name, amount, unit });
+    inventoryData.items.push({ name, amount, unit });
   }
   saveInventory();
 }
 
+// ===== INVENTORY TAB =====
 function renderInventory() {
   const container = document.getElementById('tab-inventory');
-  const recipeIngs = getAllRecipeIngredients();
+  const needed = getWeekNeededIngredients();
 
   container.innerHTML = `
-    <div class="section-title">${t('fromRecipes')}</div>
-    ${recipeIngs.length === 0 ? `<div class="empty-state">${t('inventoryEmpty')}</div>` : ''}
-    ${recipeIngs.map((ing, i) => {
-      const amt = getInventoryAmount(ing.name, ing.unit);
-      return `<div class="inv-row" data-idx="${i}">
-        <span class="inv-name">${tName(ing.name)}</span>
-        <span class="inv-amount ${amt === 0 ? 'zero' : ''}" data-name='${JSON.stringify(ing.name)}' data-unit="${ing.unit}" data-custom="false">
-          ${amt === 0 ? t('tapToSet') : amt}
-        </span>
-        <span class="inv-unit">${ing.unit}</span>
-      </div>`;
-    }).join('')}
-
-    <div class="section-title">${t('customItems')}</div>
-    ${(inventoryData.customItems || []).map((item, i) => {
-      return `<div class="inv-row">
-        <span class="inv-name">${typeof item.name === 'object' ? tName(item.name) : item.name}</span>
-        <span class="inv-amount ${item.amount === 0 ? 'zero' : ''}" data-name='${JSON.stringify(item.name)}' data-unit="${item.unit}" data-custom="true">
-          ${item.amount === 0 ? t('tapToSet') : item.amount}
-        </span>
-        <span class="inv-unit">${item.unit}</span>
-      </div>`;
-    }).join('')}
-
-    <div style="display:flex;gap:6px;margin-top:16px;align-items:center">
-      <input type="text" id="invCustomName" placeholder="${t('addCustomItem')}" style="flex:2">
-      <input type="number" id="invCustomAmount" placeholder="0" min="0" step="any" style="flex:1">
-      <select id="invCustomUnit" style="flex:1">
-        ${['g','kg','ml','l','tbsp','tsp','units','cups'].map(u =>
-          `<option value="${u}">${u}</option>`
-        ).join('')}
-      </select>
-      <button class="btn btn-primary btn-sm" id="addInvCustomBtn">+</button>
-    </div>
+    ${needed.length === 0 ? `<div class="empty-state">${t('inventoryEmpty')}</div>` :
+      needed.map((ing, i) => {
+        const onHand = getInventoryAmount(ing.name, ing.unit);
+        const enough = onHand >= ing.amount;
+        return `<div class="inv-row">
+          <span class="inv-name">${tName(ing.name)}</span>
+          <span class="inv-amount ${onHand === 0 ? 'zero' : ''}" style="${enough ? 'color:#16a34a;background:#f0fdf4' : ''}"
+            data-name='${JSON.stringify(ing.name)}' data-unit="${ing.unit}">
+            ${onHand === 0 ? t('tapToSet') : onHand}
+          </span>
+          <span class="inv-unit" style="min-width:70px">${ing.unit} <span style="color:#bbb;font-size:11px">/ ${ing.amount}</span></span>
+        </div>`;
+      }).join('')}
   `;
 
   // Tap amount to edit
@@ -1560,49 +1542,40 @@ function renderInventory() {
     el.addEventListener('click', () => {
       const name = JSON.parse(el.dataset.name);
       const unit = el.dataset.unit;
-      const isCustom = el.dataset.custom === 'true';
       const current = getInventoryAmount(name, unit);
       const newVal = prompt(t('setAmount') + ` (${unit}):`, current);
       if (newVal === null) return;
       const parsed = parseFloat(newVal);
       if (isNaN(parsed) || parsed < 0) return;
-      setInventoryAmount(name, unit, parsed, isCustom);
+      setInventoryAmount(name, unit, parsed);
       renderInventory();
+      // Auto-update grocery list if it's visible
+      if (document.getElementById('tab-grocery').classList.contains('active')) renderGroceryList();
     });
-  });
-
-  // Add custom item
-  document.getElementById('addInvCustomBtn').addEventListener('click', () => {
-    const nameInput = document.getElementById('invCustomName');
-    const amountInput = document.getElementById('invCustomAmount');
-    const unitSelect = document.getElementById('invCustomUnit');
-    const name = nameInput.value.trim();
-    if (!name) return;
-    const amount = parseFloat(amountInput.value) || 0;
-    const unit = unitSelect.value;
-    inventoryData.customItems.push({ name: { en: name, es: name }, amount, unit });
-    saveInventory();
-    renderInventory();
   });
 }
 
 function renderGroceryList() {
   const container = document.getElementById('tab-grocery');
-  const hasAuto = groceryData.autoItems && groceryData.autoItems.length > 0;
+
+  // Auto-compute grocery items from meal plan minus inventory
+  const needed = getWeekNeededIngredients();
+  const autoItems = needed.map(item => {
+    const onHand = getInventoryAmount(item.name, item.unit);
+    const remaining = item.amount - onHand;
+    if (remaining <= 0 || remaining < item.amount * 0.1) return null;
+    return { name: item.name, amount: +remaining.toFixed(1), unit: item.unit };
+  }).filter(Boolean);
+
   const hasManual = groceryData.manualItems && groceryData.manualItems.length > 0;
-  const hasItems = hasAuto || hasManual;
+  const hasItems = autoItems.length > 0 || hasManual;
 
   container.innerHTML = `
-    <div class="flex-between mb-8">
-      <button class="btn btn-primary btn-sm" id="generateGroceryBtn">${t('generateFromPlan')}</button>
-      <button class="btn btn-sm btn-secondary" id="clearCheckedBtn">${t('clearChecked')}</button>
-    </div>
     ${!hasItems ? `<div class="empty-state">${t('noItemsYet')}</div>` : ''}
-    ${hasAuto ? `
+    ${autoItems.length > 0 ? `
       <div class="section-title">${t('autoGenerated')}</div>
-      ${groceryData.autoItems.map((item, i) => `
-        <div class="check-item ${item.checked ? 'checked' : ''}" data-type="auto" data-idx="${i}">
-          <input type="checkbox" ${item.checked ? 'checked' : ''}>
+      ${autoItems.map((item, i) => `
+        <div class="check-item" data-type="auto" data-idx="${i}">
           <span class="check-label">${typeof item.name === 'object' ? tName(item.name) : item.name}</span>
           <span class="check-amount">${item.amount} ${item.unit}</span>
         </div>
@@ -1621,59 +1594,29 @@ function renderGroceryList() {
       <input type="text" id="manualItemInput" data-lang-placeholder="addItem" placeholder="${t('addItem')}">
       <button class="btn btn-primary btn-sm" id="addManualBtn">+</button>
     </div>
+    ${hasManual ? `<button class="btn btn-sm btn-secondary" id="clearCheckedBtn" style="margin-top:8px">${t('clearChecked')}</button>` : ''}
   `;
 
-  // Generate from meal plan
-  document.getElementById('generateGroceryBtn').addEventListener('click', () => {
-    const weekDates = getWeekDates();
-    const ingredientMap = {};
-    weekDates.forEach(d => {
-      const meals = mealPlan[dateKey(d)] || [];
-      meals.forEach(meal => {
-        const recipe = getRecipeById(meal.recipeId);
-        if (!recipe) return;
-        recipe.ingredients.forEach(ing => {
-          const nameEn = (typeof ing.name === 'object' ? ing.name.en : ing.name).toLowerCase();
-          const key = nameEn + '|' + ing.unit;
-          if (!ingredientMap[key]) {
-            ingredientMap[key] = { name: ing.name, amount: 0, unit: ing.unit, checked: false };
-          }
-          ingredientMap[key].amount += ing.amount;
-        });
-      });
-    });
-    groceryData.autoItems = Object.values(ingredientMap).map(item => {
-      const needed = item.amount;
-      const onHand = getInventoryAmount(item.name, item.unit);
-      const remaining = needed - onHand;
-      // Smart threshold: skip if have enough or remaining < 10% of needed
-      if (remaining <= 0 || remaining < needed * 0.1) return null;
-      return { ...item, amount: +remaining.toFixed(1) };
-    }).filter(Boolean);
-    saveGroceries();
-    renderGroceryList();
-  });
-
-  // Check/uncheck
-  container.querySelectorAll('.check-item').forEach(item => {
+  // Check/uncheck manual items
+  container.querySelectorAll('.check-item[data-type="manual"]').forEach(item => {
     const checkbox = item.querySelector('input[type="checkbox"]');
     checkbox.addEventListener('change', () => {
-      const type = item.dataset.type;
       const idx = parseInt(item.dataset.idx);
-      if (type === 'auto') groceryData.autoItems[idx].checked = checkbox.checked;
-      else groceryData.manualItems[idx].checked = checkbox.checked;
+      groceryData.manualItems[idx].checked = checkbox.checked;
       saveGroceries();
       item.classList.toggle('checked', checkbox.checked);
     });
   });
 
-  // Clear checked
-  document.getElementById('clearCheckedBtn').addEventListener('click', () => {
-    groceryData.autoItems = (groceryData.autoItems || []).filter(i => !i.checked);
-    groceryData.manualItems = (groceryData.manualItems || []).filter(i => !i.checked);
-    saveGroceries();
-    renderGroceryList();
-  });
+  // Clear checked manual items
+  const clearBtn = document.getElementById('clearCheckedBtn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      groceryData.manualItems = (groceryData.manualItems || []).filter(i => !i.checked);
+      saveGroceries();
+      renderGroceryList();
+    });
+  }
 
   // Add manual item
   const addManual = () => {
