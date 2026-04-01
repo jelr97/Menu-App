@@ -1316,23 +1316,47 @@ function renderMealPlan() {
     btn.addEventListener('click', () => openAddMealFlow(btn.dataset.date));
   });
 
-  // Remove meal on click
+  // Edit or remove meal on click
   container.querySelectorAll('.meal-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       const key = chip.dataset.date;
-      const slotLabel = chip.querySelector('.slot-label').textContent;
-      const recipeName = chip.querySelector('.recipe-name').textContent;
-      if (!confirm(t('removeMeal') + '?')) return;
-      const meals = mealPlan[key] || [];
-      // Find the meal by matching slot and recipe name rather than by sorted index
       const recipeId = chip.dataset.recipeId;
+      const slotLabel = chip.querySelector('.slot-label').textContent;
+      const meals = mealPlan[key] || [];
       const mealIdx = meals.findIndex(m => m.recipeId === recipeId &&
         (m.slot.startsWith('custom:') ? m.slot.slice(7) : t(m.slot)) === slotLabel);
-      if (mealIdx >= 0) meals.splice(mealIdx, 1);
-      if (meals.length === 0) delete mealPlan[key];
-      else mealPlan[key] = meals;
-      saveMealPlan();
-      renderMealPlan();
+      if (mealIdx < 0) return;
+      const meal = meals[mealIdx];
+
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay active';
+      modal.innerHTML = `
+        <div class="modal">
+          <h2>${chip.querySelector('.recipe-name').textContent}</h2>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button class="btn btn-primary btn-full" id="changeMealBtn">${t('editRecipe')}</button>
+            <button class="btn btn-danger btn-full" id="removeMealBtn">${t('removeMeal')}</button>
+            <button class="btn btn-secondary btn-full" id="cancelMealBtn">${t('cancel')}</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+      modal.querySelector('#cancelMealBtn').addEventListener('click', () => modal.remove());
+
+      modal.querySelector('#removeMealBtn').addEventListener('click', () => {
+        meals.splice(mealIdx, 1);
+        if (meals.length === 0) delete mealPlan[key];
+        else mealPlan[key] = meals;
+        saveMealPlan();
+        modal.remove();
+        renderMealPlan();
+      });
+
+      modal.querySelector('#changeMealBtn').addEventListener('click', () => {
+        modal.remove();
+        openRecipePicker(key, meal.slot, mealIdx);
+      });
     });
   });
 }
@@ -1375,7 +1399,7 @@ function openAddMealFlow(dateStr) {
   });
 }
 
-function openRecipePicker(dateStr, slot) {
+function openRecipePicker(dateStr, slot, replaceMealIdx) {
   const recipes = getAllRecipes();
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
@@ -1414,7 +1438,11 @@ function openRecipePicker(dateStr, slot) {
   modal.querySelectorAll('.pick-recipe').forEach(card => {
     card.addEventListener('click', () => {
       if (!mealPlan[dateStr]) mealPlan[dateStr] = [];
-      mealPlan[dateStr].push({ slot, recipeId: card.dataset.id });
+      if (replaceMealIdx !== undefined) {
+        mealPlan[dateStr][replaceMealIdx] = { slot, recipeId: card.dataset.id };
+      } else {
+        mealPlan[dateStr].push({ slot, recipeId: card.dataset.id });
+      }
       saveMealPlan();
       addToMealHistory(card.dataset.id, dateStr, slot);
       modal.remove();
