@@ -1623,7 +1623,11 @@ function renderGroceryList() {
 
 // ===== INIT =====
 updateLangUI();
-switchTab(localStorage.getItem('menuapp-active-tab') || 'mealplan');
+// Always reset recipe view on page load so we don't get stuck on a deleted recipe
+localStorage.setItem('menuapp-view', 'list');
+localStorage.removeItem('menuapp-viewing-recipe');
+const initTab = localStorage.getItem('menuapp-active-tab') || 'mealplan';
+switchTab(initTab);
   </script>
 </body>
 </html>
