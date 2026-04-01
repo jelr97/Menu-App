@@ -895,7 +895,7 @@ function renderChecklistView() {
   const pattern = checklistPattern || {};
 
   container.innerHTML = `
-    <div class="section-title" style="margin-top:0">${t('generatePlan')}</div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:12px">${t('generatePlan')}</div>
     <div class="checklist-header">
       <span></span>
       <span>${t('brkfst')}</span>
@@ -918,7 +918,7 @@ function renderChecklistView() {
         </div>`;
       }).join('')}
     </div>
-    <button class="btn btn-primary btn-full" id="generateBtn" style="margin-top:16px">${t('generatePlan')}</button>
+    <button class="btn btn-primary btn-full" id="generateBtn" style="margin-top:16px">${t('generate')}</button>
     ${weekHasMeals() ? `<button class="btn btn-secondary btn-full" id="backToWeekBtn" style="margin-top:8px">${t('cancel')}</button>` : ''}
   `;
 

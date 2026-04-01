@@ -80,13 +80,14 @@ const LANG = {
 
   // Generate Meal Plan
   generatePlan: { en: "Generate Plan", es: "Generar Plan" },
+  generate: { en: "Generate", es: "Generar" },
   newPlan: { en: "New Plan", es: "Nuevo Plan" },
   replaceOrFill: { en: "Replace all meals or fill empty slots?", es: "¿Reemplazar todas las comidas o llenar espacios vacíos?" },
   replaceAll: { en: "Replace All", es: "Reemplazar Todo" },
   fillEmpty: { en: "Fill Empty", es: "Llenar Vacíos" },
   noRecipesInCategory: { en: "No recipes available for: ", es: "No hay recetas disponibles para: " },
-  brkfst: { en: "Brkfst", es: "Desay." },
-  lunchShort: { en: "Lunch", es: "Almzo." },
+  brkfst: { en: "Breakfast", es: "Desayuno" },
+  lunchShort: { en: "Lunch", es: "Almuerzo" },
   dinnerShort: { en: "Dinner", es: "Cena" },
 
   // Confirmations
