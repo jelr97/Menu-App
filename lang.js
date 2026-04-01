@@ -78,6 +78,15 @@ const LANG = {
   removeIngredient: { en: "Remove", es: "Quitar" },
   removeStep: { en: "Remove", es: "Quitar" },
 
+  // Inventory
+  inventory: { en: "Inventory", es: "Inventario" },
+  fromRecipes: { en: "From Recipes", es: "De Recetas" },
+  customItems: { en: "Custom Items", es: "Artículos Personalizados" },
+  setAmount: { en: "Set amount", es: "Establecer cantidad" },
+  tapToSet: { en: "Tap to set", es: "Toca para establecer" },
+  inventoryEmpty: { en: "Track ingredients you have at home.", es: "Registra los ingredientes que tienes en casa." },
+  addCustomItem: { en: "Add item...", es: "Agregar artículo..." },
+
   // Generate Meal Plan
   generatePlan: { en: "Generate Plan", es: "Generar Plan" },
   generate: { en: "Generate", es: "Generar" },

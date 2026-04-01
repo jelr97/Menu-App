@@ -229,6 +229,20 @@
       width: 22px; height: 22px; accent-color: #2563eb; cursor: pointer;
     }
 
+    /* ===== INVENTORY ===== */
+    .inv-row {
+      display: flex; align-items: center; gap: 8px; padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .inv-name { flex: 1; font-size: 14px; }
+    .inv-amount {
+      min-width: 60px; text-align: right; font-weight: 600; font-size: 14px;
+      color: #2563eb; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+      background: #eff6ff;
+    }
+    .inv-amount.zero { color: #ccc; background: #f9f9f9; }
+    .inv-unit { font-size: 12px; color: #888; min-width: 32px; }
+
     /* ===== UTILITY ===== */
     .section-title { font-size: 14px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 8px; }
     .empty-state { text-align: center; padding: 40px 16px; color: #999; font-size: 14px; }
@@ -256,6 +270,9 @@
   <!-- TAB: MEAL PLAN -->
   <div class="tab-content" id="tab-mealplan"></div>
 
+  <!-- TAB: INVENTORY -->
+  <div class="tab-content" id="tab-inventory"></div>
+
   <!-- TAB: GROCERY LIST -->
   <div class="tab-content" id="tab-grocery"></div>
 
@@ -268,6 +285,10 @@
     <button data-tab="mealplan">
       <span class="tab-icon">&#128197;</span>
       <span data-lang="mealPlan">Meal Plan</span>
+    </button>
+    <button data-tab="inventory">
+      <span class="tab-icon">&#127968;</span>
+      <span data-lang="inventory">Inventory</span>
     </button>
     <button data-tab="grocery">
       <span class="tab-icon">&#128722;</span>
@@ -319,6 +340,7 @@ const STORAGE_KEYS = {
   lang: 'menuapp-lang',
   mealHistory: 'menuapp-meal-history',
   checklistPattern: 'menuapp-checklist-pattern',
+  inventory: 'menuapp-inventory',
 };
 
 let currentLang = localStorage.getItem(STORAGE_KEYS.lang) || 'en';
@@ -327,6 +349,7 @@ let mealPlan = JSON.parse(localStorage.getItem(STORAGE_KEYS.mealplan) || '{}');
 let groceryData = JSON.parse(localStorage.getItem(STORAGE_KEYS.groceries) || '{"autoItems":[],"manualItems":[]}');
 let mealHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.mealHistory) || '[]');
 let checklistPattern = JSON.parse(localStorage.getItem(STORAGE_KEYS.checklistPattern) || 'null');
+let inventoryData = JSON.parse(localStorage.getItem(STORAGE_KEYS.inventory) || '{"items":[],"customItems":[]}');
 
 function saveRecipes() { localStorage.setItem(STORAGE_KEYS.recipes, JSON.stringify(customRecipes)); }
 function saveMealPlan() { localStorage.setItem(STORAGE_KEYS.mealplan, JSON.stringify(mealPlan)); }
@@ -334,6 +357,7 @@ function saveGroceries() { localStorage.setItem(STORAGE_KEYS.groceries, JSON.str
 function saveLang() { localStorage.setItem(STORAGE_KEYS.lang, currentLang); }
 function saveMealHistory() { localStorage.setItem(STORAGE_KEYS.mealHistory, JSON.stringify(mealHistory)); }
 function saveChecklistPattern() { localStorage.setItem(STORAGE_KEYS.checklistPattern, JSON.stringify(checklistPattern)); }
+function saveInventory() { localStorage.setItem(STORAGE_KEYS.inventory, JSON.stringify(inventoryData)); }
 
 function getAllRecipes() {
   const overrideIds = customRecipes.filter(r => r.overrides).map(r => r.overrides);
@@ -380,6 +404,7 @@ function switchTab(tabName) {
   if (fab) fab.classList.toggle('hidden', tabName !== 'recipes');
   if (tabName === 'recipes') renderRecipesList();
   if (tabName === 'mealplan') renderMealPlan();
+  if (tabName === 'inventory') renderInventory();
   if (tabName === 'grocery') renderGroceryList();
 }
 
@@ -411,7 +436,7 @@ function showToast(msg) {
 
 // ===== EXPORT =====
 document.getElementById('exportBtn').addEventListener('click', () => {
-  const data = { customRecipes, mealPlan, groceryData, exportedAt: new Date().toISOString() };
+  const data = { customRecipes, mealPlan, groceryData, inventoryData, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -451,6 +476,7 @@ function applyImport(mode) {
     customRecipes = pendingImportData.customRecipes || [];
     mealPlan = pendingImportData.mealPlan || {};
     groceryData = pendingImportData.groceryData || { autoItems: [], manualItems: [] };
+    inventoryData = pendingImportData.inventoryData || { items: [], customItems: [] };
   } else {
     // Merge: add new custom recipes (by id), merge meal plan days, append manual grocery items
     const existingIds = new Set(customRecipes.map(r => r.id));
@@ -464,8 +490,25 @@ function applyImport(mode) {
     Object.assign(mealPlan, pendingImportData.mealPlan || {});
     const importManual = pendingImportData.groceryData?.manualItems || [];
     groceryData.manualItems = [...groceryData.manualItems, ...importManual];
+    // Merge inventory: update amounts for existing items, add new ones
+    if (pendingImportData.inventoryData) {
+      const existingKeys = new Set(inventoryData.items.map(i => invKey(i)));
+      (pendingImportData.inventoryData.items || []).forEach(item => {
+        const k = invKey(item);
+        if (existingKeys.has(k)) {
+          const existing = inventoryData.items.find(i => invKey(i) === k);
+          if (existing) existing.amount = item.amount;
+        } else {
+          inventoryData.items.push(item);
+        }
+      });
+      const existingCustom = new Set(inventoryData.customItems.map(i => invKey(i)));
+      (pendingImportData.inventoryData.customItems || []).forEach(item => {
+        if (!existingCustom.has(invKey(item))) inventoryData.customItems.push(item);
+      });
+    }
   }
-  saveRecipes(); saveMealPlan(); saveGroceries();
+  saveRecipes(); saveMealPlan(); saveGroceries(); saveInventory();
   pendingImportData = null;
   importModal.classList.remove('active');
   showToast(t('importSuccess'));
@@ -1284,6 +1327,122 @@ function openRecipePicker(dateStr, slot) {
   });
 }
 
+// ===== INVENTORY =====
+function invKey(item) {
+  const nameEn = (typeof item.name === 'object' ? item.name.en : item.name).toLowerCase();
+  return nameEn + '|' + item.unit;
+}
+
+function getAllRecipeIngredients() {
+  const recipes = getAllRecipes();
+  const seen = new Set();
+  const ingredients = [];
+  recipes.forEach(r => {
+    r.ingredients.forEach(ing => {
+      const key = (typeof ing.name === 'object' ? ing.name.en : ing.name).toLowerCase() + '|' + ing.unit;
+      if (!seen.has(key)) {
+        seen.add(key);
+        ingredients.push({ name: ing.name, unit: ing.unit });
+      }
+    });
+  });
+  ingredients.sort((a, b) => tName(a.name).localeCompare(tName(b.name)));
+  return ingredients;
+}
+
+function getInventoryAmount(name, unit) {
+  const key = (typeof name === 'object' ? name.en : name).toLowerCase() + '|' + unit;
+  const item = inventoryData.items.find(i => invKey(i) === key);
+  if (item) return item.amount;
+  const custom = inventoryData.customItems.find(i => invKey(i) === key);
+  if (custom) return custom.amount;
+  return 0;
+}
+
+function setInventoryAmount(name, unit, amount, isCustom) {
+  const key = (typeof name === 'object' ? name.en : name).toLowerCase() + '|' + unit;
+  const list = isCustom ? inventoryData.customItems : inventoryData.items;
+  const existing = list.find(i => invKey(i) === key);
+  if (existing) {
+    existing.amount = amount;
+  } else {
+    list.push({ name, amount, unit });
+  }
+  saveInventory();
+}
+
+function renderInventory() {
+  const container = document.getElementById('tab-inventory');
+  const recipeIngs = getAllRecipeIngredients();
+
+  container.innerHTML = `
+    <div class="section-title">${t('fromRecipes')}</div>
+    ${recipeIngs.length === 0 ? `<div class="empty-state">${t('inventoryEmpty')}</div>` : ''}
+    ${recipeIngs.map((ing, i) => {
+      const amt = getInventoryAmount(ing.name, ing.unit);
+      return `<div class="inv-row" data-idx="${i}">
+        <span class="inv-name">${tName(ing.name)}</span>
+        <span class="inv-amount ${amt === 0 ? 'zero' : ''}" data-name='${JSON.stringify(ing.name)}' data-unit="${ing.unit}" data-custom="false">
+          ${amt === 0 ? t('tapToSet') : amt}
+        </span>
+        <span class="inv-unit">${ing.unit}</span>
+      </div>`;
+    }).join('')}
+
+    <div class="section-title">${t('customItems')}</div>
+    ${(inventoryData.customItems || []).map((item, i) => {
+      return `<div class="inv-row">
+        <span class="inv-name">${typeof item.name === 'object' ? tName(item.name) : item.name}</span>
+        <span class="inv-amount ${item.amount === 0 ? 'zero' : ''}" data-name='${JSON.stringify(item.name)}' data-unit="${item.unit}" data-custom="true">
+          ${item.amount === 0 ? t('tapToSet') : item.amount}
+        </span>
+        <span class="inv-unit">${item.unit}</span>
+      </div>`;
+    }).join('')}
+
+    <div style="display:flex;gap:6px;margin-top:16px;align-items:center">
+      <input type="text" id="invCustomName" placeholder="${t('addCustomItem')}" style="flex:2">
+      <input type="number" id="invCustomAmount" placeholder="0" min="0" step="any" style="flex:1">
+      <select id="invCustomUnit" style="flex:1">
+        ${['g','kg','ml','l','tbsp','tsp','units','cups'].map(u =>
+          `<option value="${u}">${u}</option>`
+        ).join('')}
+      </select>
+      <button class="btn btn-primary btn-sm" id="addInvCustomBtn">+</button>
+    </div>
+  `;
+
+  // Tap amount to edit
+  container.querySelectorAll('.inv-amount').forEach(el => {
+    el.addEventListener('click', () => {
+      const name = JSON.parse(el.dataset.name);
+      const unit = el.dataset.unit;
+      const isCustom = el.dataset.custom === 'true';
+      const current = getInventoryAmount(name, unit);
+      const newVal = prompt(t('setAmount') + ` (${unit}):`, current);
+      if (newVal === null) return;
+      const parsed = parseFloat(newVal);
+      if (isNaN(parsed) || parsed < 0) return;
+      setInventoryAmount(name, unit, parsed, isCustom);
+      renderInventory();
+    });
+  });
+
+  // Add custom item
+  document.getElementById('addInvCustomBtn').addEventListener('click', () => {
+    const nameInput = document.getElementById('invCustomName');
+    const amountInput = document.getElementById('invCustomAmount');
+    const unitSelect = document.getElementById('invCustomUnit');
+    const name = nameInput.value.trim();
+    if (!name) return;
+    const amount = parseFloat(amountInput.value) || 0;
+    const unit = unitSelect.value;
+    inventoryData.customItems.push({ name: { en: name, es: name }, amount, unit });
+    saveInventory();
+    renderInventory();
+  });
+}
+
 function renderGroceryList() {
   const container = document.getElementById('tab-grocery');
   const hasAuto = groceryData.autoItems && groceryData.autoItems.length > 0;
@@ -1340,9 +1499,14 @@ function renderGroceryList() {
         });
       });
     });
-    groceryData.autoItems = Object.values(ingredientMap).map(item => ({
-      ...item, amount: +item.amount.toFixed(1)
-    }));
+    groceryData.autoItems = Object.values(ingredientMap).map(item => {
+      const needed = item.amount;
+      const onHand = getInventoryAmount(item.name, item.unit);
+      const remaining = needed - onHand;
+      // Smart threshold: skip if have enough or remaining < 10% of needed
+      if (remaining <= 0 || remaining < needed * 0.1) return null;
+      return { ...item, amount: +remaining.toFixed(1) };
+    }).filter(Boolean);
     saveGroceries();
     renderGroceryList();
   });
