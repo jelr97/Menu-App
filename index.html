@@ -1516,28 +1516,28 @@ function renderInventory() {
         const enough = onHand >= ing.amount;
         return `<div class="inv-row">
           <span class="inv-name">${tName(ing.name)}</span>
-          <span class="inv-amount ${onHand === 0 ? 'zero' : ''}" style="${enough ? 'color:#16a34a;background:#f0fdf4' : ''}"
-            data-name='${JSON.stringify(ing.name)}' data-unit="${ing.unit}">
-            ${onHand === 0 ? t('tapToSet') : onHand}
-          </span>
+          <input type="number" class="inv-input" value="${onHand || ''}" placeholder="" min="0" step="any"
+            data-name='${JSON.stringify(ing.name)}' data-unit="${ing.unit}"
+            style="width:60px;text-align:right;padding:6px 8px;border-radius:6px;border:1px solid #ddd;font-size:14px;font-weight:600;${enough ? 'color:#16a34a;background:#f0fdf4' : 'color:#2563eb'}">
           <span class="inv-unit" style="min-width:70px">${ing.unit} <span style="color:#bbb;font-size:11px">/ ${ing.amount}</span></span>
         </div>`;
       }).join('')}
   `;
 
-  // Tap amount to edit
-  container.querySelectorAll('.inv-amount').forEach(el => {
-    el.addEventListener('click', () => {
+  // Save on input change
+  container.querySelectorAll('.inv-input').forEach(el => {
+    el.addEventListener('change', () => {
       const name = JSON.parse(el.dataset.name);
       const unit = el.dataset.unit;
-      const current = getInventoryAmount(name, unit);
-      const newVal = prompt(t('setAmount') + ` (${unit}):`, current);
-      if (newVal === null) return;
-      const parsed = parseFloat(newVal);
-      if (isNaN(parsed) || parsed < 0) return;
+      const parsed = parseFloat(el.value) || 0;
       setInventoryAmount(name, unit, parsed);
-      renderInventory();
-      // Auto-update grocery list if it's visible
+      // Update styling
+      const needed = getWeekNeededIngredients();
+      const match = needed.find(n => invKey(n) === invKey({ name, unit }));
+      const enough = match && parsed >= match.amount;
+      el.style.color = enough ? '#16a34a' : '#2563eb';
+      el.style.background = enough ? '#f0fdf4' : '';
+      // Auto-update grocery list if visible
       if (document.getElementById('tab-grocery').classList.contains('active')) renderGroceryList();
     });
   });
