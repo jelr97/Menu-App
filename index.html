@@ -419,9 +419,16 @@ document.getElementById('langToggle').addEventListener('click', () => {
   currentLang = currentLang === 'en' ? 'es' : 'en';
   saveLang();
   updateLangUI();
-  // Re-render active tab
-  const activeTab = document.querySelector('.tab-bar button.active').dataset.tab;
-  switchTab(activeTab);
+  // Update dynamic text without re-rendering (preserves view state)
+  document.querySelectorAll('[data-t]').forEach(el => {
+    el.textContent = t(el.dataset.t);
+  });
+  document.querySelectorAll('[data-tname]').forEach(el => {
+    try { el.textContent = tName(JSON.parse(el.dataset.tname)); } catch {}
+  });
+  document.querySelectorAll('[data-t-placeholder]').forEach(el => {
+    el.placeholder = t(el.dataset.tPlaceholder);
+  });
 });
 
 // ===== SETTINGS MODAL =====
@@ -677,11 +684,11 @@ function renderRecipesList() {
 
   container.innerHTML = `
     <input type="text" id="recipeSearch" value="${currentSearch}"
-      data-lang-placeholder="search" placeholder="${t('search')}"
+      data-lang-placeholder="search" data-t-placeholder="search" placeholder="${t('search')}"
       style="margin-bottom:8px;">
     <div class="chip-row">
       ${['all','breakfast','lunch','dinner','snack'].map(cat =>
-        `<button class="chip ${currentCategory === cat ? 'active' : ''}" data-cat="${cat}">
+        `<button class="chip ${currentCategory === cat ? 'active' : ''}" data-cat="${cat}" data-t="${cat}">
           ${t(cat)}
         </button>`
       ).join('')}
@@ -689,9 +696,9 @@ function renderRecipesList() {
     ${filtered.length === 0 ? '<div class="empty-state">No recipes found</div>' :
       filtered.map(r => `
         <div class="card" data-recipe-id="${r.id}">
-          <div class="card-title">${tName(r.name)}</div>
+          <div class="card-title" data-tname='${JSON.stringify(r.name)}'>${tName(r.name)}</div>
           <div class="card-meta">
-            ${r.servings} ${t('servings').toLowerCase()}
+            ${r.servings} <span data-t="servings">${t('servings').toLowerCase()}</span>
           </div>
         </div>
       `).join('')}
@@ -751,26 +758,26 @@ function renderRecipeDetail(recipeId) {
     <div class="detail-header">
       <button class="back-btn" id="backToList">&#8592;</button>
       <div>
-        ${isCustom ? `<button class="btn btn-sm btn-secondary" id="editRecipeBtn">${t('editRecipe')}</button>` : ''}
-        ${isOverride ? `<button class="btn btn-sm btn-secondary" id="resetRecipeBtn">${t('resetToOriginal')}</button>` : ''}
-        <button class="btn btn-sm btn-danger" id="deleteRecipeBtn">${t('deleteRecipe')}</button>
+        ${isCustom ? `<button class="btn btn-sm btn-secondary" id="editRecipeBtn" data-t="editRecipe">${t('editRecipe')}</button>` : ''}
+        ${isOverride ? `<button class="btn btn-sm btn-secondary" id="resetRecipeBtn" data-t="resetToOriginal">${t('resetToOriginal')}</button>` : ''}
+        <button class="btn btn-sm btn-danger" id="deleteRecipeBtn" data-t="deleteRecipe">${t('deleteRecipe')}</button>
       </div>
     </div>
-    <h2>${tName(recipe.name)}</h2>
+    <h2 data-tname='${JSON.stringify(recipe.name)}'>${tName(recipe.name)}</h2>
     <div class="servings-control">
-      <span style="font-weight:600">${t('servings')}:</span>
+      <span style="font-weight:600"><span data-t="servings">${t('servings')}</span>:</span>
       <button id="servMinus">&#8722;</button>
       <span class="servings-count" id="servCount">${recipe.servings}</span>
       <button id="servPlus">+</button>
     </div>
-    <button class="btn btn-primary btn-full hidden" id="saveServingsBtn" style="margin-bottom:12px">${t('save')}</button>
-    <div class="section-title">${t('ingredients')}</div>
+    <button class="btn btn-primary btn-full hidden" id="saveServingsBtn" style="margin-bottom:12px" data-t="save">${t('save')}</button>
+    <div class="section-title" data-t="ingredients">${t('ingredients')}</div>
     <div id="ingredientsList">
       ${recipe.ingredients.map((ing, i) => {
         const displayAmount = +(ing.amount * scaleFactor).toFixed(1);
         return `<div class="ingredient-row">
           <span class="ingredient-amount" data-idx="${i}" title="Click to edit">${displayAmount} ${ing.unit}</span>
-          <span>${tName(ing.name)}</span>
+          <span data-tname='${JSON.stringify(ing.name)}'>${tName(ing.name)}</span>
         </div>`;
       }).join('')}
     </div>
@@ -907,37 +914,36 @@ function openRecipeForm(existingRecipe) {
   container.innerHTML = `
     <div class="detail-header">
       <button class="back-btn" id="formBack">&#8592;</button>
-      <h2>${isEdit ? t('editRecipe') : t('addRecipe')}</h2>
+      <h2 data-t="${isEdit ? 'editRecipe' : 'addRecipe'}">${isEdit ? t('editRecipe') : t('addRecipe')}</h2>
     </div>
     <div class="mb-8">
-      <label style="font-size:13px;color:#888">${t('recipeName')} (EN)</label>
+      <label style="font-size:13px;color:#888" data-t="recipeName">${t('recipeName')} (EN)</label>
       <input type="text" id="rNameEn" value="${r.name.en || ''}">
     </div>
     <div class="mb-8">
-      <label style="font-size:13px;color:#888">${t('recipeName')} (ES)</label>
+      <label style="font-size:13px;color:#888" data-t="recipeName">${t('recipeName')} (ES)</label>
       <input type="text" id="rNameEs" value="${r.name.es || ''}">
     </div>
     <div class="mb-8">
-      <label style="font-size:13px;color:#888">${t('category')}</label>
+      <label style="font-size:13px;color:#888" data-t="category">${t('category')}</label>
       <select id="rCategory">
         ${['breakfast','lunch','dinner','snack'].map(cat =>
-          `<option value="${cat}" ${r.category === cat ? 'selected' : ''}>${t(cat)}</option>`
+          `<option value="${cat}" ${r.category === cat ? 'selected' : ''} data-t="${cat}">${t(cat)}</option>`
         ).join('')}
       </select>
     </div>
     <div class="mb-8">
-      <label style="font-size:13px;color:#888">${t('servingsCount')}</label>
+      <label style="font-size:13px;color:#888" data-t="servingsCount">${t('servingsCount')}</label>
       <input type="number" id="rServings" value="${r.servings}" min="1">
     </div>
 
-    <div class="section-title">${t('ingredients')}</div>
+    <div class="section-title" data-t="ingredients">${t('ingredients')}</div>
     <div id="ingredientsForm">
       ${r.ingredients.map((ing, i) => ingredientFormRow(ing, i)).join('')}
     </div>
-    <button class="btn btn-sm btn-secondary mb-16" id="addIngBtn">+ ${t('addIngredient')}</button>
+    <button class="btn btn-sm btn-secondary mb-16" id="addIngBtn">+ <span data-t="addIngredient">${t('addIngredient')}</span></button>
 
-
-    <button class="btn btn-primary btn-full" id="saveRecipeBtn">${t('save')}</button>
+    <button class="btn btn-primary btn-full" id="saveRecipeBtn" data-t="save">${t('save')}</button>
   `;
 
   let ingCount = r.ingredients.length;
