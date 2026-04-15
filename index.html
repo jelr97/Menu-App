@@ -724,17 +724,9 @@ function renderRecipeDetail(recipeId) {
   const recipe = getRecipeById(recipeId);
   if (!recipe) return renderRecipesList();
 
-  const baseRecipe = recipe.overrides
-    ? (STARTER_RECIPES.find(r => r.id === recipe.overrides) || recipe)
-    : recipe;
-  const scaleFactor = recipe.servings / baseRecipe.servings;
-
   const container = document.getElementById('tab-recipes');
   const fab = document.getElementById('recipeFab');
   if (fab) fab.classList.add('hidden');
-
-  const isOverride = !!recipe.overrides;
-  const isCustom = recipe.isCustom && !recipe.overrides;
 
   container.innerHTML = `
     <div class="detail-header">
@@ -751,9 +743,10 @@ function renderRecipeDetail(recipeId) {
     <div class="section-title" data-t="ingredients">${t('ingredients')}</div>
     <div id="ingredientsList">
       ${recipe.ingredients.map((ing, i) => {
-        const displayAmount = +(ing.amount * scaleFactor).toFixed(1);
+        // Display exactly what's stored. The form is the source of truth for
+        // ingredient quantities; nothing between storage and display rescales.
         return `<div class="ingredient-row">
-          <span class="ingredient-amount" data-idx="${i}">${displayAmount} ${ing.unit}</span>
+          <span class="ingredient-amount" data-idx="${i}">${ing.amount} ${ing.unit}</span>
           <span data-tname='${JSON.stringify(ing.name)}'>${tName(ing.name)}</span>
         </div>`;
       }).join('')}
