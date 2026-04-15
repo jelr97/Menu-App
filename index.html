@@ -171,9 +171,8 @@
     }
     .ingredient-amount {
       min-width: 60px; font-weight: 600; font-size: 14px; color: #2563eb;
-      cursor: pointer; padding: 2px 4px; border-radius: 4px;
+      padding: 2px 4px; border-radius: 4px;
     }
-    .ingredient-amount:hover { background: #eff6ff; }
 
     /* ===== SETTINGS MODAL ===== */
     .settings-list { list-style: none; }
@@ -759,13 +758,12 @@ function renderRecipeDetail(recipeId) {
       <span class="servings-count" id="servCount">${recipe.servings}</span>
       <button id="servPlus">+</button>
     </div>
-    <button class="btn btn-primary btn-full hidden" id="saveServingsBtn" style="margin-bottom:12px" data-t="save">${t('save')}</button>
     <div class="section-title" data-t="ingredients">${t('ingredients')}</div>
     <div id="ingredientsList">
       ${recipe.ingredients.map((ing, i) => {
         const displayAmount = +(ing.amount * scaleFactor).toFixed(1);
         return `<div class="ingredient-row">
-          <span class="ingredient-amount" data-idx="${i}" title="Click to edit">${displayAmount} ${ing.unit}</span>
+          <span class="ingredient-amount" data-idx="${i}">${displayAmount} ${ing.unit}</span>
           <span data-tname='${JSON.stringify(ing.name)}'>${tName(ing.name)}</span>
         </div>`;
       }).join('')}
@@ -775,59 +773,20 @@ function renderRecipeDetail(recipeId) {
   // Back button
   document.getElementById('backToList').addEventListener('click', renderRecipesList);
 
-  // Servings +/-
+  // Servings +/- are purely visual: they rescale the displayed amounts so the
+  // user can see what the recipe looks like at a different batch size. They do
+  // NOT persist. The only path that writes a recipe is the "Editar Receta"
+  // button, which is the source of truth for stored quantities and portions.
   let currentServings = recipe.servings;
-  const saveServBtn = document.getElementById('saveServingsBtn');
-
-  function onServingsChange() {
-    updateServingsDisplay(recipe, baseRecipe, currentServings);
-    saveServBtn.classList.toggle('hidden', currentServings === recipe.servings);
-  }
 
   document.getElementById('servMinus').addEventListener('click', () => {
     if (currentServings <= 1) return;
     currentServings--;
-    onServingsChange();
+    updateServingsDisplay(recipe, baseRecipe, currentServings);
   });
   document.getElementById('servPlus').addEventListener('click', () => {
     currentServings++;
-    onServingsChange();
-  });
-
-  saveServBtn.addEventListener('click', () => {
-    const scale = currentServings / baseRecipe.servings;
-    let target;
-    if (recipe.isCustom) {
-      target = recipe;
-    } else {
-      target = JSON.parse(JSON.stringify(recipe));
-      target.isCustom = true;
-      target.overrides = recipe.id;
-      target.id = recipe.id + '-custom';
-      // Remove old override if exists
-      customRecipes = customRecipes.filter(r => r.id !== target.id);
-      customRecipes.push(target);
-    }
-    target.servings = currentServings;
-    target.ingredients = baseRecipe.ingredients.map(ing => ({
-      ...ing, name: { ...ing.name }, amount: +(ing.amount * scale).toFixed(2)
-    }));
-    saveRecipes();
-    renderRecipeDetail(target.id);
-  });
-
-  // Click ingredient amount to edit
-  container.querySelectorAll('.ingredient-amount').forEach(el => {
-    el.addEventListener('click', () => {
-      const idx = parseInt(el.dataset.idx);
-      const ing = recipe.ingredients[idx];
-      const currentAmount = +(ing.amount * (currentServings / baseRecipe.servings)).toFixed(1);
-      const newVal = prompt(`${tName(ing.name)} — ${t('amount')}:`, currentAmount);
-      if (newVal === null || isNaN(parseFloat(newVal))) return;
-      // Save as override: scale back to base servings
-      const baseAmount = parseFloat(newVal) / (currentServings / baseRecipe.servings);
-      saveIngredientEdit(recipe, idx, baseAmount);
-    });
+    updateServingsDisplay(recipe, baseRecipe, currentServings);
   });
 
   // Delete recipe (custom or starter)
@@ -843,21 +802,10 @@ function renderRecipeDetail(recipeId) {
     renderRecipesList();
   });
 
-  // Edit custom recipe
+  // Edit recipe — pure "open form" action; no persistence happens here.
+  // If this is a starter, the form's Save handler will create the override on save.
   document.getElementById('editRecipeBtn').addEventListener('click', () => {
-    // For starter recipes, create an editable copy
-    if (!recipe.isCustom) {
-      const copy = JSON.parse(JSON.stringify(recipe));
-      copy.isCustom = true;
-      copy.overrides = recipe.id;
-      copy.id = recipe.id + '-custom';
-      customRecipes = customRecipes.filter(r => r.id !== copy.id);
-      customRecipes.push(copy);
-      saveRecipes();
-      openRecipeForm(copy);
-    } else {
-      openRecipeForm(recipe);
-    }
+    openRecipeForm(recipe);
   });
 }
 
@@ -870,23 +818,6 @@ function updateServingsDisplay(recipe, baseRecipe, newServings) {
     const displayAmount = +(ing.amount * scale).toFixed(1);
     el.textContent = `${displayAmount} ${ing.unit}`;
   });
-}
-
-function saveIngredientEdit(recipe, ingredientIdx, newBaseAmount) {
-  let target;
-  if (recipe.isCustom) {
-    target = recipe;
-  } else {
-    // Create an override copy
-    target = JSON.parse(JSON.stringify(recipe));
-    target.isCustom = true;
-    target.overrides = recipe.id;
-    target.id = recipe.id + '-custom';
-    customRecipes.push(target);
-  }
-  target.ingredients[ingredientIdx].amount = newBaseAmount;
-  saveRecipes();
-  renderRecipeDetail(target.id);
 }
 
 function openRecipeForm(existingRecipe) {
@@ -957,8 +888,25 @@ function openRecipeForm(existingRecipe) {
     const name = document.getElementById('rNameEs').value.trim();
     if (!name) { showToast('El nombre es requerido'); return; }
 
+    // Determine the saved id and any override link:
+    //  - New recipe   → generate id from the name
+    //  - Edit custom  → keep its id; preserve any existing override link
+    //  - Edit starter → this save creates the override (id = <starter>-custom,
+    //    overrides = <starter>). No persistence happens until this point, so
+    //    cancelling from the form leaves the starter untouched.
+    let savedId, savedOverrides;
+    if (!isEdit) {
+      savedId = name.toLowerCase().replace(/[^a-záéíóúñü0-9]+/g, '-');
+    } else if (r.isCustom) {
+      savedId = r.id;
+      if (r.overrides) savedOverrides = r.overrides;
+    } else {
+      savedId = r.id + '-custom';
+      savedOverrides = r.id;
+    }
+
     const newRecipe = {
-      id: isEdit ? r.id : name.toLowerCase().replace(/[^a-záéíóúñü0-9]+/g, '-'),
+      id: savedId,
       name: { en: name, es: name },
       category: document.getElementById('rCategory').value,
       servings: parseInt(document.getElementById('rServings').value) || 2,
@@ -968,11 +916,10 @@ function openRecipeForm(existingRecipe) {
       instructions: { en: [], es: [] },
       isCustom: true
     };
-    // Preserve override link so the original starter recipe stays hidden
-    if (r.overrides) newRecipe.overrides = r.overrides;
+    if (savedOverrides) newRecipe.overrides = savedOverrides;
 
     if (isEdit) {
-      const idx = customRecipes.findIndex(cr => cr.id === r.id);
+      const idx = customRecipes.findIndex(cr => cr.id === newRecipe.id);
       if (idx >= 0) customRecipes[idx] = newRecipe;
       else customRecipes.push(newRecipe);
     } else {
