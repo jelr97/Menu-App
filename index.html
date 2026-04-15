@@ -667,7 +667,7 @@ function renderRecipesList() {
       data-lang-placeholder="search" data-t-placeholder="search" placeholder="${t('search')}"
       style="margin-bottom:8px;">
     <div class="chip-row">
-      ${['all','breakfast','lunch','dinner','lunchDinner'].map(cat =>
+      ${['all','breakfast','lunch','dinner'].map(cat =>
         `<button class="chip ${currentCategory === cat ? 'active' : ''}" data-cat="${cat}" data-t="${cat}">
           ${t(cat)}
         </button>`
