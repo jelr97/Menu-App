@@ -347,6 +347,17 @@ function getRecipeById(id) {
   return customRecipes.find(r => r.id === id && !r.deleted) || STARTER_RECIPES.find(r => r.id === id);
 }
 
+// A recipe matches a category if its category equals that category, OR if the
+// recipe is flagged as "lunchDinner" (flexible) and the requested category is
+// either lunch or dinner. "lunchDinner" is a recipe-side marker only — the meal
+// plan itself still has only breakfast/lunch/dinner slots.
+function recipeMatchesCategory(recipe, category) {
+  if (!recipe) return false;
+  if (recipe.category === category) return true;
+  if (recipe.category === 'lunchDinner' && (category === 'lunch' || category === 'dinner')) return true;
+  return false;
+}
+
 // ===== i18n =====
 function t(key) {
   return LANG[key] ? (LANG[key][currentLang] || LANG[key].en) : key;
@@ -653,7 +664,7 @@ function renderRecipesList() {
   const container = document.getElementById('tab-recipes');
   const recipes = getAllRecipes();
   const filtered = recipes.filter(r => {
-    const matchCat = currentCategory === 'all' || r.category === currentCategory;
+    const matchCat = currentCategory === 'all' || recipeMatchesCategory(r, currentCategory);
     const matchSearch = currentSearch === '' ||
       tName(r.name).toLowerCase().includes(currentSearch.toLowerCase());
     return matchCat && matchSearch;
@@ -664,7 +675,7 @@ function renderRecipesList() {
       data-lang-placeholder="search" data-t-placeholder="search" placeholder="${t('search')}"
       style="margin-bottom:8px;">
     <div class="chip-row">
-      ${['all','breakfast','lunch','dinner'].map(cat =>
+      ${['all','breakfast','lunch','dinner','lunchDinner'].map(cat =>
         `<button class="chip ${currentCategory === cat ? 'active' : ''}" data-cat="${cat}" data-t="${cat}">
           ${t(cat)}
         </button>`
@@ -904,7 +915,7 @@ function openRecipeForm(existingRecipe) {
     <div class="mb-8">
       <label style="font-size:13px;color:#888" data-t="category">${t('category')}</label>
       <select id="rCategory">
-        ${['breakfast','lunch','dinner'].map(cat =>
+        ${['breakfast','lunch','dinner','lunchDinner'].map(cat =>
           `<option value="${cat}" ${r.category === cat ? 'selected' : ''} data-t="${cat}">${t(cat)}</option>`
         ).join('')}
       </select>
@@ -1152,11 +1163,13 @@ function runGeneration(selections, mode) {
     });
   }
 
-  // Group by category to process most-constrained first
+  // Group by category to process most-constrained first.
+  // recipeMatchesCategory handles the "lunchDinner" flexible-category recipes,
+  // making them candidates for both lunch and dinner slots.
   const allRecipes = getAllRecipes();
   const byCategory = {};
   MEAL_SLOTS.forEach(slot => {
-    byCategory[slot] = allRecipes.filter(r => r.category === slot);
+    byCategory[slot] = allRecipes.filter(r => recipeMatchesCategory(r, slot));
   });
 
   // Check for empty categories
@@ -1400,7 +1413,7 @@ function openAddMealFlow(dateStr) {
 
 function openRecipePicker(dateStr, slot, replaceMealIdx) {
   const baseSlot = slot.startsWith('custom:') ? null : slot;
-  const recipes = getAllRecipes().filter(r => !baseSlot || r.category === baseSlot);
+  const recipes = getAllRecipes().filter(r => !baseSlot || recipeMatchesCategory(r, baseSlot));
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
   modal.innerHTML = `

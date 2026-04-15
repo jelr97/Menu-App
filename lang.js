@@ -10,6 +10,7 @@ const LANG = {
   breakfast: { en: "Breakfast", es: "Desayuno" },
   lunch: { en: "Lunch", es: "Almuerzo" },
   dinner: { en: "Dinner", es: "Cena" },
+  lunchDinner: { en: "Lunch/Dinner", es: "Almuerzo/Cena" },
   snack: { en: "Snack", es: "Snack" },
   servings: { en: "Servings", es: "Porciones" },
   prepTime: { en: "Prep", es: "Prep" },
