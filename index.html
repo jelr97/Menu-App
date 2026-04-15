@@ -79,9 +79,8 @@
       display: flex;
       position: fixed;
       bottom: calc(16px + env(safe-area-inset-bottom, 0));
-      left: 50%;
-      transform: translateX(-50%);
-      max-width: calc(100% - 24px);
+      left: 16px;
+      right: 16px;
       padding: 6px;
       gap: 4px;
       border-radius: 999px;
@@ -122,9 +121,12 @@
     }
     .tab-bar button {
       position: relative;
-      flex: 0 0 auto;
+      /* Equal distribution so the pill spans the viewport and tabs space out
+         evenly — matches the iOS tab bar convention. */
+      flex: 1 1 0;
+      min-width: 0;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      padding: 8px 18px;
+      padding: 8px 12px;
       border: 0.5px solid transparent;
       background: transparent;
       font-size: 11px; font-weight: 500;
