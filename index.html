@@ -143,11 +143,32 @@
     .day-date { font-size: 12px; color: #999; font-weight: 400; }
     .meal-chips { display: flex; flex-direction: column; gap: 4px; }
     .meal-chip {
-      font-size: 13px; padding: 8px 10px; background: #f3f4f6; border-radius: 6px;
-      position: relative; display: flex; align-items: center; gap: 8px;
+      font-size: 13px; padding: 6px 8px; background: #f3f4f6; border-radius: 6px;
+      position: relative; display: flex; align-items: center; gap: 6px;
+    }
+    .meal-chip-body {
+      flex: 1; display: flex; align-items: center; gap: 8px;
+      min-width: 0; cursor: pointer;
     }
     .meal-chip .slot-label { font-weight: 600; font-size: 10px; color: #888; text-transform: uppercase; min-width: 55px; }
-    .meal-chip .recipe-name { font-size: 13px; flex: 1; }
+    .meal-chip .recipe-name {
+      font-size: 13px; flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .meal-portion-btn {
+      width: 26px; height: 26px; border-radius: 50%;
+      border: 1px solid #ddd; background: #fff;
+      font-size: 16px; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: #555; flex-shrink: 0; padding: 0;
+    }
+    .meal-portion-btn:active { background: #f0f0f0; }
+    .meal-portion-btn[disabled] { opacity: 0.35; cursor: default; }
+    .meal-portion-count {
+      min-width: 18px; text-align: center;
+      font-weight: 700; font-size: 13px; color: #2563eb;
+      flex-shrink: 0;
+    }
     .day-add-btn {
       width: 100%; padding: 6px; border: 1px dashed #ddd; border-radius: 6px;
       background: none; font-size: 18px; color: #ccc; cursor: pointer;
@@ -935,6 +956,14 @@ function dateKey(d) {
   return d.toISOString().split('T')[0];
 }
 
+// Resolve how many portions a meal is scheduled for. Legacy meals (created
+// before portion tracking existed) have no `servings` field — fall back to
+// the recipe's own servings so they display and aggregate sensibly.
+function getMealServings(meal, recipe) {
+  if (meal && typeof meal.servings === 'number' && meal.servings > 0) return meal.servings;
+  return (recipe && typeof recipe.servings === 'number' && recipe.servings > 0) ? recipe.servings : 1;
+}
+
 // ===== CHECKLIST VIEW & GENERATION =====
 const DAY_NAMES = ['mon','tue','wed','thu','fri','sat','sun'];
 const MEAL_SLOTS = ['breakfast','lunch','dinner'];
@@ -1100,7 +1129,7 @@ function runGeneration(selections, mode) {
     const pick = scored[0];
 
     if (!mealPlan[sel.date]) mealPlan[sel.date] = [];
-    mealPlan[sel.date].push({ slot: sel.slot, recipeId: pick.id });
+    mealPlan[sel.date].push({ slot: sel.slot, recipeId: pick.id, servings: pick.servings });
     assigned.push({ recipeId: pick.id, date: sel.date, slot: sel.slot });
     mealHistory.push({ recipeId: pick.id, date: sel.date, slot: sel.slot });
   });
@@ -1203,9 +1232,18 @@ function renderMealPlan() {
             ${sorted.map((meal, mi) => {
               const recipe = getRecipeById(meal.recipeId);
               const slotLabel = meal.slot.startsWith('custom:') ? meal.slot.slice(7) : t(meal.slot);
-              return `<div class="meal-chip" data-date="${key}" data-meal-idx="${mi}" data-recipe-id="${meal.recipeId}">
-                <span class="slot-label">${slotLabel}</span>
-                <span class="recipe-name">${recipe ? tName(recipe.name) : '?'}</span>
+              const servings = getMealServings(meal, recipe);
+              // Find the real index in the unsorted array so +/- and click handlers
+              // mutate the correct entry even after the display has been sorted.
+              const realIdx = meals.indexOf(meal);
+              return `<div class="meal-chip" data-date="${key}" data-meal-idx="${realIdx}" data-recipe-id="${meal.recipeId}">
+                <button class="meal-portion-btn" data-action="dec" aria-label="−" ${servings <= 1 ? 'disabled' : ''}>−</button>
+                <div class="meal-chip-body">
+                  <span class="slot-label">${slotLabel}</span>
+                  <span class="recipe-name">${recipe ? tName(recipe.name) : '?'}</span>
+                </div>
+                <span class="meal-portion-count">${servings}</span>
+                <button class="meal-portion-btn" data-action="inc" aria-label="+">+</button>
               </div>`;
             }).join('')}
             <button class="day-add-btn" data-date="${key}">+</button>
@@ -1231,23 +1269,47 @@ function renderMealPlan() {
     btn.addEventListener('click', () => openAddMealFlow(btn.dataset.date));
   });
 
-  // Edit or remove meal on click
-  container.querySelectorAll('.meal-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
+  // Portion +/- buttons: adjust meal.servings in place, persist, and update the
+  // chip's DOM directly (no full re-render, so scroll position is preserved).
+  // Grocery list re-reads mealPlan on next view, so it picks up the new totals.
+  container.querySelectorAll('.meal-portion-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const chip = btn.closest('.meal-chip');
       const key = chip.dataset.date;
-      const recipeId = chip.dataset.recipeId;
-      const slotLabel = chip.querySelector('.slot-label').textContent;
+      const mealIdx = parseInt(chip.dataset.mealIdx, 10);
       const meals = mealPlan[key] || [];
-      const mealIdx = meals.findIndex(m => m.recipeId === recipeId &&
-        (m.slot.startsWith('custom:') ? m.slot.slice(7) : t(m.slot)) === slotLabel);
-      if (mealIdx < 0) return;
       const meal = meals[mealIdx];
+      if (!meal) return;
+      const recipe = getRecipeById(meal.recipeId);
+      const current = getMealServings(meal, recipe);
+      const delta = btn.dataset.action === 'inc' ? 1 : -1;
+      const next = Math.max(1, current + delta);
+      if (next === current) return;
+      meal.servings = next;
+      saveMealPlan();
+      chip.querySelector('.meal-portion-count').textContent = next;
+      const decBtn = chip.querySelector('.meal-portion-btn[data-action="dec"]');
+      if (next <= 1) decBtn.setAttribute('disabled', '');
+      else decBtn.removeAttribute('disabled');
+    });
+  });
+
+  // Edit or remove meal on body click (buttons stopPropagation, so they don't reach here)
+  container.querySelectorAll('.meal-chip-body').forEach(body => {
+    body.addEventListener('click', () => {
+      const chip = body.closest('.meal-chip');
+      const key = chip.dataset.date;
+      const mealIdx = parseInt(chip.dataset.mealIdx, 10);
+      const meals = mealPlan[key] || [];
+      const meal = meals[mealIdx];
+      if (!meal) return;
 
       const modal = document.createElement('div');
       modal.className = 'modal-overlay active';
       modal.innerHTML = `
         <div class="modal">
-          <h2>${chip.querySelector('.recipe-name').textContent}</h2>
+          <h2>${body.querySelector('.recipe-name').textContent}</h2>
           <div style="display:flex;flex-direction:column;gap:8px">
             <button class="btn btn-primary btn-full" id="changeMealBtn">${t('editRecipe')}</button>
             <button class="btn btn-danger btn-full" id="removeMealBtn">${t('removeMeal')}</button>
@@ -1354,10 +1416,13 @@ function openRecipePicker(dateStr, slot, replaceMealIdx) {
   modal.querySelectorAll('.pick-recipe').forEach(card => {
     card.addEventListener('click', () => {
       if (!mealPlan[dateStr]) mealPlan[dateStr] = [];
+      const pickedRecipe = getRecipeById(card.dataset.id);
+      const defaultServings = pickedRecipe ? pickedRecipe.servings : 1;
+      const entry = { slot, recipeId: card.dataset.id, servings: defaultServings };
       if (replaceMealIdx !== undefined) {
-        mealPlan[dateStr][replaceMealIdx] = { slot, recipeId: card.dataset.id };
+        mealPlan[dateStr][replaceMealIdx] = entry;
       } else {
-        mealPlan[dateStr].push({ slot, recipeId: card.dataset.id });
+        mealPlan[dateStr].push(entry);
       }
       saveMealPlan();
       addToMealHistory(card.dataset.id, dateStr, slot);
@@ -1392,13 +1457,18 @@ function getWeekNeededIngredients() {
     meals.forEach(meal => {
       const recipe = getRecipeById(meal.recipeId);
       if (!recipe) return;
+      // Scale the recipe's ingredient amounts by how many portions the user
+      // wants for *this meal* (set via the +/- controls on the weekly plan),
+      // relative to the recipe's own serving count.
+      const mealServings = getMealServings(meal, recipe);
+      const scale = recipe.servings > 0 ? (mealServings / recipe.servings) : 1;
       recipe.ingredients.forEach(ing => {
         const nameEn = (typeof ing.name === 'object' ? ing.name.en : ing.name).toLowerCase();
         const key = nameEn + '|' + ing.unit;
         if (!ingredientMap[key]) {
           ingredientMap[key] = { name: ing.name, amount: 0, unit: ing.unit };
         }
-        ingredientMap[key].amount += ing.amount;
+        ingredientMap[key].amount += ing.amount * scale;
       });
     });
   });
