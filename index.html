@@ -1237,11 +1237,11 @@ function renderMealPlan() {
               // mutate the correct entry even after the display has been sorted.
               const realIdx = meals.indexOf(meal);
               return `<div class="meal-chip" data-date="${key}" data-meal-idx="${realIdx}" data-recipe-id="${meal.recipeId}">
-                <button class="meal-portion-btn" data-action="dec" aria-label="−" ${servings <= 1 ? 'disabled' : ''}>−</button>
                 <div class="meal-chip-body">
                   <span class="slot-label">${slotLabel}</span>
                   <span class="recipe-name">${recipe ? tName(recipe.name) : '?'}</span>
                 </div>
+                <button class="meal-portion-btn" data-action="dec" aria-label="−" ${servings <= 1 ? 'disabled' : ''}>−</button>
                 <span class="meal-portion-count">${servings}</span>
                 <button class="meal-portion-btn" data-action="inc" aria-label="+">+</button>
               </div>`;
