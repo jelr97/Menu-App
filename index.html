@@ -1402,7 +1402,7 @@ function runGeneration(selections, mode) {
     const candidates = byCategory[sel.slot];
     if (candidates.length === 0) return;
 
-    const scored = scoreRecipes(candidates, sel.date, sel.dayName, assigned);
+    const scored = scoreRecipes(candidates, sel.date, sel.dayName, assigned, weekDateKeys);
     const pick = scored[0];
 
     if (!mealPlan[sel.date]) mealPlan[sel.date] = [];
@@ -1488,11 +1488,12 @@ function getRecipeProteins(recipe) {
 //
 //   Random tiebreaker       0 – 0.5 pts
 //
-function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned) {
+function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKeys) {
   const today = new Date();
   const todayMs = today.getTime();
   const fourWeeksAgo = todayMs - 28 * 86400000;
   const dateMs = new Date(dateStr + 'T12:00:00').getTime();
+  const weekKeySet = new Set(weekDateKeys || []);
 
   // Collect meals within ±2 days of this slot's date from all three sources
   // (current meal plan, this-run assignments, historical record), deduped
@@ -1527,6 +1528,29 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned) {
     proteins: getRecipeProteins(getRecipeById(m.recipeId)),
   }));
 
+  // Collect *every* meal scheduled in the current week, regardless of source.
+  // This is what the within-week + same-day penalties run against. Previously
+  // we only scanned alreadyAssigned, which misses two important cases:
+  //   - fill mode with pre-existing manual entries in mealPlan
+  //   - replace runs where mealPlan has already been updated but the current
+  //     candidate is a different meal about to repeat an earlier pick
+  // weekKeySet restricts to the 7 current-week date strings so unrelated
+  // past entries in mealPlan don't bleed in.
+  const weekUseKeys = new Set();
+  const currentWeekMeals = [];
+  const addInWeek = (date, recipeId) => {
+    if (!date || !recipeId) return;
+    if (weekKeySet.size && !weekKeySet.has(date)) return;
+    const key = date + '|' + recipeId;
+    if (weekUseKeys.has(key)) return;
+    weekUseKeys.add(key);
+    currentWeekMeals.push({ date, recipeId });
+  };
+  for (const [date, meals] of Object.entries(mealPlan)) {
+    for (const meal of meals) addInWeek(date, meal.recipeId);
+  }
+  for (const a of alreadyAssigned) addInWeek(a.date, a.recipeId);
+
   const scored = candidates.map(recipe => {
     let score = 0;
 
@@ -1555,12 +1579,14 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned) {
     });
 
     // 4. Within-week uniqueness — escalating triangular penalty.
-    const usedThisWeek = alreadyAssigned.filter(a => a.recipeId === recipe.id).length;
+    //    Counts every time the recipe appears anywhere in the current week
+    //    (mealPlan + this-run assignments), deduped — not just this run's.
+    const usedThisWeek = currentWeekMeals.filter(m => m.recipeId === recipe.id).length;
     score -= usedThisWeek * (usedThisWeek + 1) / 2 * 100;
 
     // 5. Same-day penalty — avoid lunchDinner recipe appearing twice in one day.
-    const usedThisDay = alreadyAssigned.filter(a =>
-      a.recipeId === recipe.id && a.date === dateStr
+    const usedThisDay = currentWeekMeals.filter(m =>
+      m.recipeId === recipe.id && m.date === dateStr
     ).length;
     score -= usedThisDay * 1000;
 
