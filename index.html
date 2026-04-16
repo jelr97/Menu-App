@@ -945,7 +945,11 @@ function renderRecipesList() {
     const matchSearch = currentSearch === '' ||
       tName(r.name).toLowerCase().includes(currentSearch.toLowerCase());
     return matchCat && matchSearch;
-  });
+  }).sort((a, b) =>
+    // Always alphabetical by the displayed (localized) name. localeCompare
+    // with 'es' handles ñ and accented letters correctly.
+    tName(a.name).localeCompare(tName(b.name), 'es', { sensitivity: 'base' })
+  );
 
   container.innerHTML = `
     <input type="text" id="recipeSearch" value="${currentSearch}"
@@ -1791,7 +1795,9 @@ function openAddMealFlow(dateStr) {
 
 function openRecipePicker(dateStr, slot, replaceMealIdx) {
   const baseSlot = slot.startsWith('custom:') ? null : slot;
-  const recipes = getAllRecipes().filter(r => !baseSlot || recipeMatchesCategory(r, baseSlot));
+  const recipes = getAllRecipes()
+    .filter(r => !baseSlot || recipeMatchesCategory(r, baseSlot))
+    .sort((a, b) => tName(a.name).localeCompare(tName(b.name), 'es', { sensitivity: 'base' }));
   const modal = document.createElement('div');
   modal.className = 'modal-overlay active';
   modal.innerHTML = `
