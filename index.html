@@ -1380,8 +1380,17 @@ function runGeneration(selections, mode) {
 
   if (slotsToFill.length === 0) { renderMealPlan(); return; }
 
-  // Sort by most constrained (fewest recipes in category first)
-  slotsToFill.sort((a, b) => byCategory[a.slot].length - byCategory[b.slot].length);
+  // Sort day-by-day (primary) then most-constrained within each day (secondary).
+  // Day-by-day ensures the same-day penalty kicks in for lunchDinner recipes
+  // before the other slots on that day are filled. Within each day, the most
+  // constrained category fills first to avoid starving small pools.
+  const weekDateKeys = weekDates.map(d => dateKey(d));
+  slotsToFill.sort((a, b) => {
+    const dayA = weekDateKeys.indexOf(a.date);
+    const dayB = weekDateKeys.indexOf(b.date);
+    if (dayA !== dayB) return dayA - dayB;
+    return byCategory[a.slot].length - byCategory[b.slot].length;
+  });
 
   const assigned = []; // track { recipeId, date, slot } for within-week uniqueness
 
@@ -1403,36 +1412,71 @@ function runGeneration(selections, mode) {
   renderMealPlan();
 }
 
+// ---------- Recipe scoring for auto-generation ----------
+//
+// Score components (from strongest to weakest):
+//
+//   Same-day penalty        −1000 per use on this date
+//     Prevents a lunchDinner recipe from being lunch AND dinner on Monday.
+//
+//   Within-week penalty     escalating: −100 × n(n+1)/2  (−100, −300, −600…)
+//     1st reuse is −100.  2nd is −300.  3rd is −600.  Makes triple-use
+//     nearly impossible; doubles happen only when the pool is too small.
+//
+//   Recency bonus           min(daysSince, 30)  (never-used → 30)
+//     Capped so penalties above always dominate.  Never-used recipes get
+//     the cap — they're preferred but not infinitely so.
+//
+//   4-week frequency        −5 per use in last 28 days
+//     Catches recipes that are "technically not recent" but have been
+//     scheduled too often.  A recipe used 3× in 4 weeks loses 15 pts.
+//
+//   Same-weekday penalty    −15 / weeksSince, for each prior use on the
+//                           same weekday.  Fades with time.
+//
+//   Random tiebreaker       0 – 0.5 pts
+//
 function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned) {
   const today = new Date();
   const todayMs = today.getTime();
+  const fourWeeksAgo = todayMs - 28 * 86400000;
 
   const scored = candidates.map(recipe => {
     let score = 0;
 
-    // 1. Recency score: days since last used (higher = better)
+    // 1. Recency bonus — capped at 30 so penalties actually dominate.
     const lastUse = [...mealHistory].reverse().find(h => h.recipeId === recipe.id);
     if (lastUse) {
-      const lastDate = new Date(lastUse.date);
-      const daysSince = Math.max(1, Math.floor((todayMs - lastDate.getTime()) / 86400000));
-      score += daysSince;
+      const daysSince = Math.max(1, Math.floor((todayMs - new Date(lastUse.date).getTime()) / 86400000));
+      score += Math.min(daysSince, 30);
     } else {
-      score += 9999; // never used = max score
+      score += 30; // never used = same as 30 days ago
     }
 
-    // 2. Same-weekday penalty
+    // 2. 4-week frequency penalty — how often has it appeared recently?
+    const recentUseCount = mealHistory.filter(h =>
+      h.recipeId === recipe.id && new Date(h.date).getTime() > fourWeeksAgo
+    ).length;
+    score -= recentUseCount * 5;
+
+    // 3. Same-weekday penalty — avoid Taco Tuesday every Tuesday.
     const sameWeekdayUses = mealHistory.filter(h =>
       h.recipeId === recipe.id && getDayNameFromDate(h.date) === dayName
     );
     sameWeekdayUses.forEach(use => {
-      const useDate = new Date(use.date);
-      const weeksSince = Math.max(1, Math.floor((todayMs - useDate.getTime()) / (7 * 86400000)));
-      score -= 50 / weeksSince;
+      const weeksSince = Math.max(1, Math.floor((todayMs - new Date(use.date).getTime()) / (7 * 86400000)));
+      score -= 15 / weeksSince;
     });
 
-    // 3. Within-week uniqueness penalty
+    // 4. Within-week uniqueness — escalating triangular penalty.
     const usedThisWeek = alreadyAssigned.filter(a => a.recipeId === recipe.id).length;
-    score -= usedThisWeek * 500;
+    score -= usedThisWeek * (usedThisWeek + 1) / 2 * 100;
+
+    // 5. Same-day penalty — avoid lunchDinner recipe appearing twice in one day.
+    const usedThisDay = alreadyAssigned.filter(a =>
+      a.recipeId === recipe.id && a.date === dateStr
+    ).length;
+    score -= usedThisDay * 1000;
 
     // Random tiebreaker
     score += Math.random() * 0.5;
