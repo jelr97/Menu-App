@@ -1412,6 +1412,48 @@ function runGeneration(selections, mode) {
   renderMealPlan();
 }
 
+// ---------- Protein auto-detection ----------
+//
+// Users don't want the same protein (beef, chicken, fish…) on consecutive
+// days. Rather than requiring them to tag every recipe manually, we scan
+// ingredient names for a handful of keywords in English + Spanish. The
+// detection is deliberately broad — a recipe can carry multiple proteins
+// (e.g. "rice, beans and chicken" tags chicken + beans) and the scoring
+// penalizes any overlap with neighboring days.
+//
+// Dairy (milk/cheese/yogurt/butter) is intentionally excluded — the user's
+// concern is meat-level proteins, not "cheese two days in a row".
+const PROTEIN_KEYWORDS = {
+  beef:    ['beef', 'steak', 'ground beef', 'lomo', 'carne molida', 'carne de res', 'bistec', 'ternera'],
+  chicken: ['chicken', 'pollo', 'pechuga', 'muslo'],
+  pork:    ['pork', 'bacon', 'cerdo', 'chancho', 'tocino', 'jamon'],
+  fish:    ['fish', 'salmon', 'tuna', 'pescado', 'atun', 'bacalao', 'trucha'],
+  eggs:    ['egg', 'huevo'],
+  turkey:  ['turkey', 'pavo'],
+  shrimp:  ['shrimp', 'prawn', 'camaron', 'langostino'],
+  lamb:    ['lamb', 'cordero'],
+  beans:   ['bean', 'lentil', 'chickpea', 'frijol', 'lenteja', 'garbanzo'],
+};
+
+// Lowercase + strip diacritics, so "atún" → "atun" matches the keyword table.
+function normalizeProteinText(s) {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function getRecipeProteins(recipe) {
+  if (!recipe || !Array.isArray(recipe.ingredients)) return new Set();
+  const joined = recipe.ingredients.map(ing => {
+    const n = ing.name;
+    return typeof n === 'object' ? `${n.en || ''} ${n.es || ''}` : (n || '');
+  }).join(' ');
+  const text = normalizeProteinText(joined);
+  const proteins = new Set();
+  for (const [protein, keywords] of Object.entries(PROTEIN_KEYWORDS)) {
+    if (keywords.some(kw => text.includes(kw))) proteins.add(protein);
+  }
+  return proteins;
+}
+
 // ---------- Recipe scoring for auto-generation ----------
 //
 // Score components (from strongest to weakest):
@@ -1422,6 +1464,11 @@ function runGeneration(selections, mode) {
 //   Within-week penalty     escalating: −100 × n(n+1)/2  (−100, −300, −600…)
 //     1st reuse is −100.  2nd is −300.  3rd is −600.  Makes triple-use
 //     nearly impossible; doubles happen only when the pool is too small.
+//
+//   Protein proximity       −30 for each overlapping protein 1 day away,
+//                           −10 at 2 days away
+//     If yesterday was beef, today's beef recipes lose 30 pts. If both beef
+//     AND beans were yesterday and today's recipe has both, it loses 60.
 //
 //   Recency bonus           min(daysSince, 30)  (never-used → 30)
 //     Capped so penalties above always dominate.  Never-used recipes get
@@ -1440,6 +1487,38 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned) {
   const today = new Date();
   const todayMs = today.getTime();
   const fourWeeksAgo = todayMs - 28 * 86400000;
+  const dateMs = new Date(dateStr + 'T12:00:00').getTime();
+
+  // Collect meals within ±2 days of this slot's date from all three sources
+  // (current meal plan, this-run assignments, historical record), deduped
+  // by (date + recipeId) so the same meal counted in multiple sources only
+  // contributes once. Excludes same-date entries (daysDiff = 0) because
+  // those are already handled by the same-day and within-week penalties.
+  const nearbyKeys = new Set();
+  const nearby = [];
+  const addIfNearby = (date, recipeId) => {
+    if (!date || !recipeId) return;
+    const key = date + '|' + recipeId;
+    if (nearbyKeys.has(key)) return;
+    const mealMs = new Date(date + 'T12:00:00').getTime();
+    const daysDiff = Math.abs((mealMs - dateMs) / 86400000);
+    if (daysDiff > 0 && daysDiff <= 2) {
+      nearbyKeys.add(key);
+      nearby.push({ recipeId, daysDiff });
+    }
+  };
+  for (const [date, meals] of Object.entries(mealPlan)) {
+    for (const meal of meals) addIfNearby(date, meal.recipeId);
+  }
+  for (const a of alreadyAssigned) addIfNearby(a.date, a.recipeId);
+  for (const h of mealHistory) addIfNearby(h.date, h.recipeId);
+
+  // Precompute proteins for each nearby meal once; each candidate reuses this.
+  const nearbyWithProteins = nearby.map(m => ({
+    recipeId: m.recipeId,
+    daysDiff: m.daysDiff,
+    proteins: getRecipeProteins(getRecipeById(m.recipeId)),
+  }));
 
   const scored = candidates.map(recipe => {
     let score = 0;
@@ -1477,6 +1556,24 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned) {
       a.recipeId === recipe.id && a.date === dateStr
     ).length;
     score -= usedThisDay * 1000;
+
+    // 6. Protein proximity — no beef two days in a row, etc.
+    //    Skipped when the neighbor IS this same recipe: that case is already
+    //    covered by within-week penalties, and double-dipping would make
+    //    existing scheduled meals of the same recipe forever unbeatable.
+    const myProteins = getRecipeProteins(recipe);
+    if (myProteins.size > 0) {
+      for (const n of nearbyWithProteins) {
+        if (n.recipeId === recipe.id) continue;
+        if (n.proteins.size === 0) continue;
+        let overlap = 0;
+        for (const p of myProteins) if (n.proteins.has(p)) overlap++;
+        if (overlap > 0) {
+          const weight = n.daysDiff <= 1 ? 30 : 10;
+          score -= overlap * weight;
+        }
+      }
+    }
 
     // Random tiebreaker
     score += Math.random() * 0.5;
