@@ -1596,7 +1596,18 @@ function runGeneration(selections, mode, numWeeks) {
     const candidates = byCategory[sel.slot];
     if (candidates.length === 0) return;
 
-    const scored = scoreRecipes(candidates, sel.date, sel.dayName, assigned, weekDateKeys);
+    // Deduplicate candidates by display name. If the user accidentally
+    // created two recipes with the same name (different IDs), they'd
+    // bypass the within-week penalty and repeat. Keep only the first.
+    const seenNames = new Set();
+    const dedupedCandidates = candidates.filter(r => {
+      const name = tName(r.name).toLowerCase();
+      if (seenNames.has(name)) return false;
+      seenNames.add(name);
+      return true;
+    });
+
+    const scored = scoreRecipes(dedupedCandidates, sel.date, sel.dayName, assigned, weekDateKeys);
     const pick = scored[0];
 
     if (!mealPlan[sel.date]) mealPlan[sel.date] = [];
@@ -1780,7 +1791,8 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKey
     const key = date + '|' + recipeId;
     if (weekUseKeys.has(key)) return;
     weekUseKeys.add(key);
-    currentWeekMeals.push({ date, recipeId });
+    const r = getRecipeById(recipeId);
+    currentWeekMeals.push({ date, recipeId, recipeName: r ? tName(r.name).toLowerCase() : '' });
   };
   for (const [date, meals] of Object.entries(mealPlan)) {
     for (const meal of meals) addInWeek(date, meal.recipeId);
@@ -1815,14 +1827,16 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKey
     });
 
     // 4. Within-week uniqueness — escalating triangular penalty.
-    //    Counts every time the recipe appears anywhere in the current week
-    //    (mealPlan + this-run assignments), deduped — not just this run's.
-    const usedThisWeek = currentWeekMeals.filter(m => m.recipeId === recipe.id).length;
+    //    Matches by recipe ID OR display name, so accidental duplicate
+    //    recipes (same name, different IDs) still get penalized.
+    const myName = tName(recipe.name).toLowerCase();
+    const matchesMe = m => m.recipeId === recipe.id || m.recipeName === myName;
+    const usedThisWeek = currentWeekMeals.filter(matchesMe).length;
     score -= usedThisWeek * (usedThisWeek + 1) / 2 * 100;
 
     // 5. Same-day penalty — avoid lunchDinner recipe appearing twice in one day.
     const usedThisDay = currentWeekMeals.filter(m =>
-      m.recipeId === recipe.id && m.date === dateStr
+      matchesMe(m) && m.date === dateStr
     ).length;
     score -= usedThisDay * 1000;
 
