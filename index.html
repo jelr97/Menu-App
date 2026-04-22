@@ -55,8 +55,8 @@
     }
     .top-bar-actions { display: flex; gap: 8px; align-items: center; }
     .settings-btn {
-      background: none; border: none; font-size: 20px; cursor: pointer; color: #3c3c43;
-      padding: 4px;
+      background: none; border: none; font-size: 26px; cursor: pointer; color: #3c3c43;
+      padding: 6px;
     }
 
     /* ===== TAB CONTENT ===== */
@@ -511,9 +511,9 @@
     <h1>Menu App</h1>
     <div class="top-bar-actions">
       <button id="exportPdfBtn" title="Export PDF" style="
-        font-size:11px; font-weight:700; color:#2563eb; cursor:pointer;
-        border:1.5px solid #2563eb; border-radius:6px; background:none;
-        padding:3px 7px; letter-spacing:0.3px;
+        font-size:13px; font-weight:700; color:#2563eb; cursor:pointer;
+        border:2px solid #2563eb; border-radius:8px; background:none;
+        padding:4px 10px; letter-spacing:0.3px;
       ">PDF</button>
       <button class="settings-btn" id="syncBtn" title="Sync">&#9729;</button>
       <button class="settings-btn" id="settingsBtn">&#9881;</button>
@@ -713,6 +713,14 @@ settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal)
 
 // ===== EXPORT PDF (jsPDF) =====
 document.getElementById('exportPdfBtn').addEventListener('click', () => {
+  // Open the tab SYNCHRONOUSLY in the click handler so iOS Safari's
+  // popup blocker allows it. Then redirect after PDF generation.
+  const pdfTab = window.open('', '_blank');
+  if (pdfTab) {
+    pdfTab.document.write('<html><body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#888">Generando PDF...</body></html>');
+    pdfTab.document.close();
+  }
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
@@ -808,10 +816,15 @@ document.getElementById('exportPdfBtn').addEventListener('click', () => {
     },
   });
 
-  // Open in new browser tab
+  // Redirect the already-opened tab to the PDF blob
   const pdfBlob = doc.output('blob');
   const url = URL.createObjectURL(pdfBlob);
-  window.open(url, '_blank');
+  if (pdfTab && !pdfTab.closed) {
+    pdfTab.location.href = url;
+  } else {
+    // Fallback: download the file directly
+    doc.save('menu-plan.pdf');
+  }
 });
 
 // ===== TOAST =====
@@ -1915,7 +1928,7 @@ function renderMealPlan() {
       <div class="section-title" style="margin:0">${t('mealPlan')}</div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm btn-primary" id="newPlanBtn">${t('newPlan')}</button>
-        <button class="btn btn-sm btn-danger" id="clearWeekBtn">${t('clearWeek')}</button>
+        <button class="btn btn-sm btn-danger" id="clearWeekBtn" style="background:rgba(255,255,255,0.85);border:0.5px solid #dc2626">${t('clearWeek')}</button>
       </div>
     </div>
     <div class="week-row">
