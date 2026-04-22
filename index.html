@@ -1481,7 +1481,7 @@ const PROTEIN_KEYWORDS = {
 };
 
 // Lowercase + strip diacritics, so "atún" → "atun" matches the keyword table.
-function normalizeProteinText(s) {
+function normalizeTagText(s) {
   return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
@@ -1491,12 +1491,43 @@ function getRecipeProteins(recipe) {
     const n = ing.name;
     return typeof n === 'object' ? `${n.en || ''} ${n.es || ''}` : (n || '');
   }).join(' ');
-  const text = normalizeProteinText(joined);
+  const text = normalizeTagText(joined);
   const proteins = new Set();
   for (const [protein, keywords] of Object.entries(PROTEIN_KEYWORDS)) {
     if (keywords.some(kw => text.includes(kw))) proteins.add(protein);
   }
   return proteins;
+}
+
+// ---------- Base/starch auto-detection ----------
+//
+// Prevents scheduling pasta three days in a row, or rice every day.
+// Scans both the recipe NAME (where "Lasaña" or "Spaghetti" typically
+// appears) and ingredients (where "espaguetis" or "arroz" live).
+const BASE_KEYWORDS = {
+  pasta: ['spaghetti', 'espagueti', 'pasta', 'lasagna', 'lasana', 'penne',
+          'fettuccine', 'macaroni', 'fideos', 'tallarines', 'rigatoni',
+          'ravioli', 'linguine', 'fusilli', 'noodle', 'fideo'],
+  rice:  ['rice', 'arroz', 'risotto'],
+};
+
+function getRecipeBases(recipe) {
+  if (!recipe) return new Set();
+  const namePart = typeof recipe.name === 'object'
+    ? `${recipe.name.en || ''} ${recipe.name.es || ''}`
+    : (recipe.name || '');
+  const ingPart = Array.isArray(recipe.ingredients)
+    ? recipe.ingredients.map(ing => {
+        const n = ing.name;
+        return typeof n === 'object' ? `${n.en || ''} ${n.es || ''}` : (n || '');
+      }).join(' ')
+    : '';
+  const text = normalizeTagText(namePart + ' ' + ingPart);
+  const bases = new Set();
+  for (const [base, keywords] of Object.entries(BASE_KEYWORDS)) {
+    if (keywords.some(kw => text.includes(kw))) bases.add(base);
+  }
+  return bases;
 }
 
 // ---------- Recipe scoring for auto-generation ----------
@@ -1562,12 +1593,16 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKey
   for (const a of alreadyAssigned) addIfNearby(a.date, a.recipeId);
   for (const h of mealHistory) addIfNearby(h.date, h.recipeId);
 
-  // Precompute proteins for each nearby meal once; each candidate reuses this.
-  const nearbyWithProteins = nearby.map(m => ({
-    recipeId: m.recipeId,
-    daysDiff: m.daysDiff,
-    proteins: getRecipeProteins(getRecipeById(m.recipeId)),
-  }));
+  // Precompute proteins AND base/starch tags for each nearby meal once.
+  const nearbyWithTags = nearby.map(m => {
+    const r = getRecipeById(m.recipeId);
+    return {
+      recipeId: m.recipeId,
+      daysDiff: m.daysDiff,
+      proteins: getRecipeProteins(r),
+      bases: getRecipeBases(r),
+    };
+  });
 
   // Collect *every* meal scheduled in the current week, regardless of source.
   // This is what the within-week + same-day penalties run against. Previously
@@ -1632,21 +1667,31 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKey
     score -= usedThisDay * 1000;
 
     // 6. Protein proximity — no beef twice in one day, no chicken two days
-    //    in a row, etc.  Weight scales with closeness:
-    //       same day        → 40 per overlapping protein (worst case)
-    //       1 day apart     → 30
-    //       2 days apart    → 10
-    //    Skipped when the neighbor IS this same recipe: that case is already
-    //    covered by within-week / same-day penalties, and double-dipping
-    //    would make existing scheduled meals of the same recipe forever
-    //    unbeatable.
+    //    in a row, etc.  Same-recipe neighbors are skipped (covered by
+    //    within-week / same-day penalties instead).
     const myProteins = getRecipeProteins(recipe);
     if (myProteins.size > 0) {
-      for (const n of nearbyWithProteins) {
+      for (const n of nearbyWithTags) {
         if (n.recipeId === recipe.id) continue;
         if (n.proteins.size === 0) continue;
         let overlap = 0;
         for (const p of myProteins) if (n.proteins.has(p)) overlap++;
+        if (overlap > 0) {
+          const weight = n.daysDiff === 0 ? 40 : (n.daysDiff <= 1 ? 30 : 10);
+          score -= overlap * weight;
+        }
+      }
+    }
+
+    // 7. Base/starch proximity — no pasta 3 days in a row, no rice every
+    //    day, etc. Same weights as protein proximity.
+    const myBases = getRecipeBases(recipe);
+    if (myBases.size > 0) {
+      for (const n of nearbyWithTags) {
+        if (n.recipeId === recipe.id) continue;
+        if (n.bases.size === 0) continue;
+        let overlap = 0;
+        for (const b of myBases) if (n.bases.has(b)) overlap++;
         if (overlap > 0) {
           const weight = n.daysDiff === 0 ? 40 : (n.daysDiff <= 1 ? 30 : 10);
           score -= overlap * weight;
