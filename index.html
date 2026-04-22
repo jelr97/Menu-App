@@ -1355,17 +1355,23 @@ function renderChecklistView() {
   const weekDates = getWeekDates();
   const todayKey = dateKey(new Date());
 
-  // Migrate old checkbox-based pattern to people-count format
-  if (checklistPattern && typeof Object.values(checklistPattern)[0] === 'object') {
-    const migrated = {};
-    DAY_NAMES.forEach(dn => {
-      const old = checklistPattern[dn];
-      migrated[dn] = (old && (old.lunch || old.dinner)) ? 2 : 0;
-    });
-    checklistPattern = migrated;
-    saveChecklistPattern();
+  // Migrate old formats to per-slot people-count: { mon: { lunch: 1, dinner: 1 }, ... }
+  if (checklistPattern) {
+    const sample = Object.values(checklistPattern)[0];
+    if (typeof sample === 'number' || (typeof sample === 'object' && sample !== null && typeof sample.lunch !== 'number')) {
+      const migrated = {};
+      DAY_NAMES.forEach(dn => {
+        const old = checklistPattern[dn];
+        const isWeekend = dn === 'sat' || dn === 'sun';
+        const val = typeof old === 'number' ? old : ((old && (old.lunch || old.dinner)) ? 1 : 0);
+        migrated[dn] = { lunch: isWeekend ? 0 : val, dinner: isWeekend ? 0 : val };
+      });
+      checklistPattern = migrated;
+      saveChecklistPattern();
+    }
   }
   const pattern = checklistPattern || {};
+  const WEEKEND = new Set(['sat', 'sun']);
 
   container.innerHTML = `
     <div style="font-size:18px;font-weight:700;margin-bottom:12px">${t('generatePlan')}</div>
@@ -1375,19 +1381,29 @@ function renderChecklistView() {
       <span style="font-weight:700;font-size:16px;color:#2563eb;min-width:22px;text-align:center" id="weeksCount">${plannedWeeks}</span>
       <button class="meal-portion-btn" id="weeksUp" ${plannedWeeks >= 4 ? 'disabled' : ''}>+</button>
     </div>
+    <div class="checklist-header" style="grid-template-columns:1fr 90px 90px;margin-bottom:6px">
+      <span></span>
+      <span style="text-align:center">${t('lunchShort')}</span>
+      <span style="text-align:center">${t('dinnerShort')}</span>
+    </div>
     <div class="checklist-grid">
       ${weekDates.map((d, i) => {
         const dn = DAY_NAMES[i];
         const isToday = dateKey(d) === todayKey;
-        const count = typeof pattern[dn] === 'number' ? pattern[dn] : 2;
-        return `<div class="checklist-row" style="grid-template-columns:1fr auto">
+        const isWknd = WEEKEND.has(dn);
+        const dp = pattern[dn] || {};
+        const lunchCount = typeof dp.lunch === 'number' ? dp.lunch : (isWknd ? 0 : 1);
+        const dinnerCount = typeof dp.dinner === 'number' ? dp.dinner : (isWknd ? 0 : 1);
+        return `<div class="checklist-row" style="grid-template-columns:1fr 90px 90px">
           <div class="day-label ${isToday ? 'today' : ''}">${t(dn)}</div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <button class="meal-portion-btn people-btn" data-day="${dn}" data-action="dec" ${count <= 0 ? 'disabled' : ''}>−</button>
-            <span class="meal-portion-count people-count" data-day="${dn}" style="min-width:22px">${count}</span>
-            <button class="meal-portion-btn people-btn" data-day="${dn}" data-action="inc">+</button>
-            <span style="font-size:12px;color:#8e8e93;min-width:55px">${currentLang === 'es' ? 'personas' : 'people'}</span>
-          </div>
+          ${MEAL_SLOTS.map(slot => {
+            const cnt = slot === 'lunch' ? lunchCount : dinnerCount;
+            return `<div style="display:flex;align-items:center;justify-content:center;gap:4px">
+              <button class="meal-portion-btn people-btn" data-day="${dn}" data-slot="${slot}" data-action="dec" style="width:22px;height:22px;font-size:13px" ${cnt <= 0 ? 'disabled' : ''}>−</button>
+              <span class="meal-portion-count people-count" data-day="${dn}" data-slot="${slot}" style="min-width:18px;font-size:13px">${cnt}</span>
+              <button class="meal-portion-btn people-btn" data-day="${dn}" data-slot="${slot}" data-action="inc" style="width:22px;height:22px;font-size:13px">+</button>
+            </div>`;
+          }).join('')}
         </div>`;
       }).join('')}
     </div>
@@ -1395,19 +1411,21 @@ function renderChecklistView() {
     ${weekHasMeals() ? `<button class="btn btn-secondary btn-full" id="backToWeekBtn" style="margin-top:8px">${t('cancel')}</button>` : ''}
   `;
 
-  // People +/- handlers
+  // People +/- handlers (per day × slot)
   container.querySelectorAll('.people-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       if (!checklistPattern) checklistPattern = {};
       const dn = btn.dataset.day;
-      const countEl = container.querySelector(`.people-count[data-day="${dn}"]`);
+      const slot = btn.dataset.slot;
+      if (!checklistPattern[dn]) checklistPattern[dn] = {};
+      const countEl = container.querySelector(`.people-count[data-day="${dn}"][data-slot="${slot}"]`);
       let current = parseInt(countEl.textContent) || 0;
       const delta = btn.dataset.action === 'inc' ? 1 : -1;
       current = Math.max(0, current + delta);
       countEl.textContent = current;
-      checklistPattern[dn] = current;
+      checklistPattern[dn][slot] = current;
       saveChecklistPattern();
-      const decBtn = container.querySelector(`.people-btn[data-day="${dn}"][data-action="dec"]`);
+      const decBtn = container.querySelector(`.people-btn[data-day="${dn}"][data-slot="${slot}"][data-action="dec"]`);
       if (current <= 0) decBtn.setAttribute('disabled', '');
       else decBtn.removeAttribute('disabled');
     });
@@ -1459,13 +1477,16 @@ function collectChecklistSelections(numWeeks) {
   const selections = [];
   const baseWeekDates = getWeekDates(1);
   const pat = checklistPattern || {};
+  const WEEKEND = new Set(['sat', 'sun']);
   for (let w = 0; w < numWeeks; w++) {
     DAY_NAMES.forEach((dn, dayIdx) => {
-      const count = typeof pat[dn] === 'number' ? pat[dn] : 2;
-      if (count <= 0) return;
+      const dp = pat[dn] || {};
+      const isWknd = WEEKEND.has(dn);
       const d = new Date(baseWeekDates[dayIdx]);
       d.setDate(d.getDate() + w * 7);
       MEAL_SLOTS.forEach(slot => {
+        const count = typeof dp[slot] === 'number' ? dp[slot] : (isWknd ? 0 : 1);
+        if (count <= 0) return;
         selections.push({
           date: dateKey(d),
           dayName: dn,
@@ -1603,7 +1624,8 @@ function runGeneration(selections, mode, numWeeks) {
 const PROTEIN_KEYWORDS = {
   beef:    ['beef', 'steak', 'ground beef', 'lomo', 'carne molida', 'carne de res', 'bistec', 'ternera'],
   chicken: ['chicken', 'pollo', 'pechuga', 'muslo'],
-  pork:    ['pork', 'bacon', 'cerdo', 'chancho', 'tocino', 'jamon', 'salchicha', 'chorizo'],
+  pork:    ['pork', 'bacon', 'cerdo', 'chancho', 'tocino', 'jamon'],
+  sausage: ['salchicha', 'chorizo', 'hot dog', 'perro caliente'],
   fish:    ['fish', 'salmon', 'tuna', 'pescado', 'atun', 'bacalao', 'trucha'],
   eggs:    ['egg', 'huevo'],
   turkey:  ['turkey', 'pavo'],
