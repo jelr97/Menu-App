@@ -586,6 +586,8 @@
   <!-- HIDDEN FILE INPUT -->
   <input type="file" id="fileInput" accept=".json" class="hidden">
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" crossorigin="anonymous"></script>
   <script src="lang.js"></script>
   <script src="recipes-data.js"></script>
   <script>
@@ -711,95 +713,102 @@ settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal)
 
 // ===== EXPORT PDF =====
 document.getElementById('exportPdfBtn').addEventListener('click', () => {
-  const allDates = getWeekDates(plannedWeeks);
-  const weeks = [];
-  for (let w = 0; w < plannedWeeks; w++) weeks.push(allDates.slice(w * 7, w * 7 + 7));
+  if (!window.jspdf) {
+    showToast(currentLang === 'es' ? 'Librería PDF no cargada. Verifica tu conexión.' : 'PDF library not loaded. Check connection.');
+    return;
+  }
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pw = doc.internal.pageSize.getWidth();
 
-  // ── Page 1: Plan Semanal ──
-  const weekHeaders = weeks.map((wd, i) =>
-    `<th>${plannedWeeks > 1 ? (currentLang === 'es' ? 'Sem ' : 'Wk ') + (i+1) + '<br>' : ''}` +
-    `<span class="sub">${wd[0].getDate()}/${wd[0].getMonth()+1} – ${wd[6].getDate()}/${wd[6].getMonth()+1}</span></th>`
-  ).join('');
+    // ── Page 1: Plan Semanal ──
+    doc.setFontSize(18);
+    doc.text(t('mealPlan'), 14, 16);
+    doc.setFontSize(9); doc.setTextColor(130);
+    doc.text(new Date().toLocaleDateString(), pw - 14, 16, { align: 'right' });
+    doc.setTextColor(0);
 
-  const planRows = DAY_NAMES.map((dn, dayIdx) => {
-    const cells = weeks.map(weekDates => {
-      const d = weekDates[dayIdx];
-      const meals = mealPlan[dateKey(d)] || [];
-      if (meals.length === 0) return '<td class="empty">—</td>';
-      const slotOrder = ['lunch','dinner'];
-      const sorted = [...meals].sort((a,b) =>
-        (slotOrder.indexOf(a.slot)>=0?slotOrder.indexOf(a.slot):99) -
-        (slotOrder.indexOf(b.slot)>=0?slotOrder.indexOf(b.slot):99));
-      return '<td>' + sorted.map(meal => {
-        const recipe = getRecipeById(meal.recipeId);
-        const sl = meal.slot.startsWith('custom:') ? meal.slot.slice(7) : t(meal.slot);
-        const sv = getMealServings(meal, recipe);
-        return `<span class="slot">${sl}</span> ${recipe ? tName(recipe.name) : '?'}` +
-          (sv > 1 ? ` <span class="sv">×${sv}</span>` : '');
-      }).join('<br>') + '</td>';
-    }).join('');
-    return `<tr><td class="day">${t(dn)}</td>${cells}</tr>`;
-  }).join('');
+    const allDates = getWeekDates(plannedWeeks);
+    const weeks = [];
+    for (let w = 0; w < plannedWeeks; w++) weeks.push(allDates.slice(w * 7, w * 7 + 7));
 
-  // ── Page 2: Lista de Compras ──
-  const needed = getWeekNeededIngredients();
-  const toBuyItems = needed.map(ing => {
-    const onHand = getInventoryAmount(ing.name, ing.unit);
-    const toBuy = Math.max(0, +(ing.amount - onHand).toFixed(1));
-    return { name: tName(ing.name), amount: toBuy, unit: ing.unit };
-  }).filter(i => i.amount > 0);
-  const manualItems = (groceryData.manualItems || []).filter(i => !i.checked);
+    const head = [['', ...weeks.map((wd, i) => {
+      let l = plannedWeeks > 1 ? (currentLang==='es'?'Sem ':'Wk ') + (i+1) + '\n' : '';
+      return l + wd[0].getDate()+'/'+(wd[0].getMonth()+1)+' - '+wd[6].getDate()+'/'+(wd[6].getMonth()+1);
+    })]];
 
-  const mid = Math.ceil(toBuyItems.length / 2);
-  const col1 = toBuyItems.slice(0, mid);
-  const col2 = toBuyItems.slice(mid);
-  const groceryCol = items => items.map(i =>
-    `<div class="gi"><span>${i.name}</span><span class="amt">${i.amount} ${i.unit}</span></div>`
-  ).join('');
+    const body = DAY_NAMES.map((dn, dayIdx) => {
+      const cells = weeks.map(wd => {
+        const meals = mealPlan[dateKey(wd[dayIdx])] || [];
+        if (!meals.length) return '';
+        const so = ['lunch','dinner'];
+        return [...meals].sort((a,b) => (so.indexOf(a.slot)>=0?so.indexOf(a.slot):99)-(so.indexOf(b.slot)>=0?so.indexOf(b.slot):99))
+          .map(m => {
+            const r = getRecipeById(m.recipeId);
+            const sl = m.slot.startsWith('custom:')?m.slot.slice(7):t(m.slot);
+            const sv = getMealServings(m, r);
+            return sl.toUpperCase()+': '+(r?tName(r.name):'?')+(sv>1?' (x'+sv+')':'');
+          }).join('\n');
+      });
+      return [t(dn), ...cells];
+    });
 
-  const manualHtml = manualItems.length > 0
-    ? `<div class="manual-hdr">${t('manualItems')}</div>` +
-      manualItems.map(i => `<div class="gi">${i.name}</div>`).join('')
-    : '';
+    doc.autoTable({
+      head, body, startY: 22,
+      styles: { fontSize: 8, cellPadding: 2.5, overflow: 'linebreak' },
+      headStyles: { fillColor: [37,99,235], textColor: 255, fontStyle: 'bold' },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 24 } },
+      theme: 'grid',
+    });
 
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Menu Plan</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,system-ui,sans-serif;color:#1c1c1e;padding:20px;font-size:13px}
-h1{font-size:20px;margin-bottom:4px}
-.date{font-size:11px;color:#888;margin-bottom:14px}
-table{width:100%;border-collapse:collapse;margin-bottom:10px}
-th,td{padding:7px 8px;border:1px solid #ddd;vertical-align:top;text-align:left}
-th{background:#2563eb;color:#fff;font-size:12px;font-weight:600}
-.sub{font-weight:400;font-size:10px;opacity:.8}
-td.day{font-weight:700;white-space:nowrap;width:70px}
-td.empty{color:#ccc;font-style:italic}
-.slot{font-size:9px;font-weight:700;text-transform:uppercase;color:#888}
-.sv{color:#2563eb;font-size:11px}
-.page2{page-break-before:always;margin-top:30px}
-.cols{display:flex;gap:20px}
-.col{flex:1}
-.gi{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
-.amt{font-weight:600;white-space:nowrap;margin-left:8px}
-.manual-hdr{font-size:11px;font-weight:700;text-transform:uppercase;color:#888;margin:16px 0 6px;letter-spacing:.5px}
-@media print{body{padding:10px}@page{margin:10mm}.page2{margin-top:0}}
-</style></head><body>
-<h1>${t('mealPlan')}</h1>
-<div class="date">${new Date().toLocaleDateString()}</div>
-<table><thead><tr><th></th>${weekHeaders}</tr></thead><tbody>${planRows}</tbody></table>
-<div class="page2">
-<h1>${t('groceryList')}</h1>
-<div class="date">${toBuyItems.length} ${currentLang==='es'?'artículos':'items'}</div>
-<div class="cols"><div class="col">${groceryCol(col1)}</div><div class="col">${groceryCol(col2)}</div></div>
-${manualHtml}
-</div></body></html>`;
+    // ── Page 2: Lista de Compras (2 columns) ──
+    doc.addPage();
+    doc.setFontSize(18); doc.setTextColor(0);
+    doc.text(t('groceryList'), 14, 16);
 
-  const w = window.open('', '_blank');
-  if (!w) { showToast('Pop-up blocked'); return; }
-  w.document.write(html);
-  w.document.close();
+    const needed = getWeekNeededIngredients();
+    const toBuy = needed.map(ing => {
+      const oh = getInventoryAmount(ing.name, ing.unit);
+      const tb = Math.max(0, +(ing.amount - oh).toFixed(1));
+      return { name: tName(ing.name), amount: tb, unit: ing.unit };
+    }).filter(i => i.amount > 0);
+    const manual = (groceryData.manualItems || []).filter(i => !i.checked);
+    const all = [...toBuy.map(i => [i.name, i.amount+' '+i.unit]),
+                 ...(manual.length ? [['— '+(currentLang==='es'?'Manuales':'Manual')+' —', '']] : []),
+                 ...manual.map(i => [i.name, ''])];
+
+    const mid = Math.ceil(all.length / 2);
+    const tbl = [];
+    for (let i = 0; i < Math.max(mid, all.length - mid); i++) {
+      const l = all[i] || ['',''];
+      const r = all[i + mid] || ['',''];
+      tbl.push([l[0], l[1], r[0], r[1]]);
+    }
+
+    doc.autoTable({
+      body: tbl, startY: 22,
+      styles: { fontSize: 9, cellPadding: 2 },
+      columnStyles: {
+        0: { cellWidth: (pw-28)/2 - 18 },
+        1: { cellWidth: 18, halign: 'right', fontStyle: 'bold' },
+        2: { cellWidth: (pw-28)/2 - 18 },
+        3: { cellWidth: 18, halign: 'right', fontStyle: 'bold' },
+      },
+      theme: 'plain',
+      didDrawCell: (data) => {
+        if (data.row.index === 0 || !data.cell.raw) return;
+        if (data.column.index === 1 || data.column.index === 3) return;
+        const y = data.cell.y + data.cell.height;
+        doc.setDrawColor(230); doc.setLineWidth(0.2);
+        doc.line(data.cell.x, y, data.cell.x + data.cell.width + 18, y);
+      },
+    });
+
+    doc.save('menu-plan.pdf');
+  } catch (e) {
+    showToast('Error: ' + e.message);
+  }
 });
 
 // ===== TOAST =====
@@ -1689,6 +1698,14 @@ function getRecipeBases(recipe) {
   return bases;
 }
 
+// All single-word keywords from both tables, used to prevent the
+// name-word proximity penalty from double-counting words that are
+// already handled by the protein or base keyword systems.
+const _allTagKeywords = new Set([
+  ...Object.values(PROTEIN_KEYWORDS).flat(),
+  ...Object.values(BASE_KEYWORDS).flat(),
+].map(k => normalizeTagText(k)).filter(k => !k.includes(' ')));
+
 // ---------- Recipe scoring for auto-generation ----------
 //
 // Score components (from strongest to weakest):
@@ -1860,11 +1877,14 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKey
     }
 
     // 8. Name-word proximity — catches similarity that keywords miss.
-    //    If two recipes share ANY significant word in their name (≥4 chars,
-    //    so "de", "con", "y" are ignored), they get penalized by distance.
-    //    "Hamburguesa pollo" vs "Hamburguesa carne" share "hamburguesa".
-    //    This is a catch-all on top of the keyword-based protein/base checks.
-    const myWords = new Set(normalizeTagText(myName).split(/\s+/).filter(w => w.length >= 4));
+    //    Skips words already in PROTEIN_KEYWORDS or BASE_KEYWORDS to avoid
+    //    double-counting: "lomo" in PROTEIN_KEYWORDS.beef was causing
+    //    triple-dipping (protein + base + name) making Lomo Saltado
+    //    permanently unschedulable.
+    const myWords = new Set(
+      normalizeTagText(myName).split(/\s+/)
+        .filter(w => w.length >= 4 && !_allTagKeywords.has(w))
+    );
     if (myWords.size > 0) {
       for (const n of nearbyWithTags) {
         if (n.recipeId === recipe.id) continue;
