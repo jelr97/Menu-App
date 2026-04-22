@@ -1859,11 +1859,35 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKey
       }
     }
 
-    // Random tiebreaker — large enough (0–3) that recipes with similar
-    // scores rotate across regenerations instead of always picking the
-    // same winner.  Still small vs the penalty gaps (-30 protein, -100
-    // within-week) so it can't override meaningful penalties.
-    score += Math.random() * 3;
+    // 8. Name-word proximity — catches similarity that keywords miss.
+    //    If two recipes share ANY significant word in their name (≥4 chars,
+    //    so "de", "con", "y" are ignored), they get penalized by distance.
+    //    "Hamburguesa pollo" vs "Hamburguesa carne" share "hamburguesa".
+    //    This is a catch-all on top of the keyword-based protein/base checks.
+    const myWords = new Set(normalizeTagText(myName).split(/\s+/).filter(w => w.length >= 4));
+    if (myWords.size > 0) {
+      for (const n of nearbyWithTags) {
+        if (n.recipeId === recipe.id) continue;
+        const nRecipe = getRecipeById(n.recipeId);
+        if (!nRecipe) continue;
+        const nWords = new Set(normalizeTagText(tName(nRecipe.name).toLowerCase()).split(/\s+/).filter(w => w.length >= 4));
+        let shared = 0;
+        for (const w of myWords) if (nWords.has(w)) shared++;
+        if (shared > 0) {
+          const weight = n.daysDiff === 0 ? 40 : (n.daysDiff <= 1 ? 35 : (n.daysDiff <= 2 ? 25 : (n.daysDiff <= 3 ? 15 : 8)));
+          score -= shared * weight;
+        }
+      }
+    }
+
+    // Random shuffle factor (0–10). Large enough that first picks in a
+    // fresh plan are genuinely random (30 + 0-10 = 30-40, meaningfully
+    // shuffled). Still smaller than every proximity penalty:
+    //   2-day: -25 → max score 15, always loses to unpenalized min 30
+    //   3-day: -15 → max score 25, always loses to unpenalized min 30
+    //   4-day: -8  → max score 32, sometimes wins (OK, 4 days is fine)
+    //   within-week: -100 → never wins
+    score += Math.random() * 10;
 
     return { ...recipe, _score: score };
   });
