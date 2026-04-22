@@ -411,14 +411,16 @@
       flex-shrink: 0;
     }
     .day-add-btn {
-      width: 100%; padding: 8px;
-      border: 1px dashed rgba(0, 0, 0, 0.12);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.3);
-      font-size: 18px; color: #8e8e93; cursor: pointer;
+      width: 24px; height: 24px; padding: 0;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.4);
+      font-size: 16px; line-height: 1; color: #8e8e93; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
       transition: background 0.12s ease;
     }
-    .day-add-btn:active { background: rgba(255, 255, 255, 0.55); }
+    .day-add-btn:active { background: rgba(255, 255, 255, 0.7); }
 
     /* ===== RECIPE DETAIL ===== */
     .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
@@ -508,7 +510,11 @@
   <div class="top-bar">
     <h1>Menu App</h1>
     <div class="top-bar-actions">
-      <button class="settings-btn" id="exportPdfBtn" title="Export PDF">&#128196;</button>
+      <button id="exportPdfBtn" title="Export PDF" style="
+        font-size:11px; font-weight:700; color:#2563eb; cursor:pointer;
+        border:1.5px solid #2563eb; border-radius:6px; background:none;
+        padding:3px 7px; letter-spacing:0.3px;
+      ">PDF</button>
       <button class="settings-btn" id="syncBtn" title="Sync">&#9729;</button>
       <button class="settings-btn" id="settingsBtn">&#9881;</button>
     </div>
@@ -1597,7 +1603,7 @@ function runGeneration(selections, mode, numWeeks) {
 const PROTEIN_KEYWORDS = {
   beef:    ['beef', 'steak', 'ground beef', 'lomo', 'carne molida', 'carne de res', 'bistec', 'ternera'],
   chicken: ['chicken', 'pollo', 'pechuga', 'muslo'],
-  pork:    ['pork', 'bacon', 'cerdo', 'chancho', 'tocino', 'jamon'],
+  pork:    ['pork', 'bacon', 'cerdo', 'chancho', 'tocino', 'jamon', 'salchicha', 'chorizo'],
   fish:    ['fish', 'salmon', 'tuna', 'pescado', 'atun', 'bacalao', 'trucha'],
   eggs:    ['egg', 'huevo'],
   turkey:  ['turkey', 'pavo'],
@@ -1631,13 +1637,16 @@ function getRecipeProteins(recipe) {
 // Scans both the recipe NAME (where "Lasaña" or "Spaghetti" typically
 // appears) and ingredients (where "espaguetis" or "arroz" live).
 const BASE_KEYWORDS = {
-  pasta:  ['spaghetti', 'espagueti', 'pasta', 'lasagna', 'lasana', 'penne',
-           'fettuccine', 'macaroni', 'fideos', 'tallarines', 'rigatoni',
-           'ravioli', 'linguine', 'fusilli', 'noodle', 'fideo'],
-  rice:   ['rice', 'arroz', 'risotto'],
-  burger: ['hamburguesa', 'burger', 'hamburger'],
-  wrap:   ['burrito', 'wrap'],
-  soup:   ['sopa', 'soup', 'caldo', 'crema de'],
+  pasta:     ['spaghetti', 'espagueti', 'pasta', 'lasagna', 'lasana', 'penne',
+              'fettuccine', 'macaroni', 'fideos', 'tallarines', 'rigatoni',
+              'ravioli', 'linguine', 'fusilli', 'noodle', 'fideo'],
+  bolognese: ['bolognese', 'bolonesa'],
+  rice:      ['rice', 'arroz', 'risotto'],
+  burger:    ['hamburguesa', 'burger', 'hamburger'],
+  hotdog:    ['perro caliente', 'hot dog', 'salchicha'],
+  wrap:      ['burrito', 'wrap'],
+  soup:      ['sopa', 'soup', 'caldo', 'crema de'],
+  sandwich:  ['sandwich', 'emparedado'],
 };
 
 function getRecipeBases(recipe) {
@@ -1890,9 +1899,12 @@ function renderMealPlan() {
                ${t('mealPlan')} — ${currentLang === 'es' ? 'Semana' : 'Week'} ${Math.floor(i / 7) + 1}
              </div>` : '';
         return `${weekSeparator}<div class="day-col ${isToday ? 'today' : ''}">
-          <div class="day-header ${isToday ? 'today' : ''}">
-            ${t(dayNames[i % 7])}
-            <span class="day-date">${d.getDate()}/${d.getMonth()+1}</span>
+          <div class="day-header ${isToday ? 'today' : ''}" style="display:flex;justify-content:space-between;align-items:center">
+            <div style="display:flex;align-items:center;gap:8px">
+              ${t(dayNames[i % 7])}
+              <span class="day-date">${d.getDate()}/${d.getMonth()+1}</span>
+            </div>
+            <button class="day-add-btn" data-date="${key}">+</button>
           </div>
           <div class="meal-chips">
             ${sorted.map((meal, mi) => {
@@ -1910,7 +1922,6 @@ function renderMealPlan() {
                 <button class="meal-portion-btn" data-action="inc" aria-label="+">+</button>
               </div>`;
             }).join('')}
-            <button class="day-add-btn" data-date="${key}">+</button>
           </div>
         </div>`;
       }).join('')}
