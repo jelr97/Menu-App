@@ -1444,7 +1444,25 @@ function runGeneration(selections, mode, numWeeks) {
     if (candidates.length === 0) return;
 
     const scored = scoreRecipes(candidates, sel.date, sel.dayName, assigned, weekDateKeys);
-    const pick = scored[0];
+
+    // Hard constraint: within the same 7-day block, don't reuse a recipe
+    // unless every candidate in this category has already been used in the
+    // block. The soft penalties in scoreRecipes SHOULD rank repeats low,
+    // but this catches any edge case (stale history, duplicate recipe IDs,
+    // new recipes with max recency bonus, etc.) that could let a repeat
+    // slip through the penalty math.
+    const blockStart = Math.floor(weekDateKeys.indexOf(sel.date) / 7) * 7;
+    const blockKeys = new Set(weekDateKeys.slice(blockStart, blockStart + 7));
+    const usedInBlock = new Set();
+    for (const a of assigned) {
+      if (blockKeys.has(a.date)) usedInBlock.add(a.recipeId);
+    }
+    for (const [date, meals] of Object.entries(mealPlan)) {
+      if (blockKeys.has(date)) {
+        for (const m of meals) usedInBlock.add(m.recipeId);
+      }
+    }
+    const pick = scored.find(r => !usedInBlock.has(r.id)) || scored[0];
 
     if (!mealPlan[sel.date]) mealPlan[sel.date] = [];
     mealPlan[sel.date].push({ slot: sel.slot, recipeId: pick.id, servings: pick.servings });
