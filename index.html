@@ -1751,13 +1751,11 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKey
   const dateMs = new Date(dateStr + 'T12:00:00').getTime();
   const weekKeySet = new Set(weekDateKeys || []);
 
-  // Collect meals within ±2 days of this slot's date from all three sources
+  // Collect meals within ±4 days of this slot's date from all three sources
   // (current meal plan, this-run assignments, historical record), deduped
-  // by (date + recipeId) so the same meal counted in multiple sources only
-  // contributes once. Same-date (daysDiff = 0) is INCLUDED for the protein
-  // check — picking chicken for both lunch and dinner on the same day is
-  // the most noticeable form of protein repetition. Same-recipe same-day
-  // is still handled separately by the stronger same-day penalty.
+  // by (date + recipeId). The wide window ensures that two burgers 3-4 days
+  // apart still get penalized. Same-date (daysDiff = 0) IS included for the
+  // protein/base check — chicken lunch + chicken dinner same day is bad.
   const nearbyKeys = new Set();
   const nearby = [];
   const addIfNearby = (date, recipeId) => {
@@ -1766,7 +1764,7 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKey
     if (nearbyKeys.has(key)) return;
     const mealMs = new Date(date + 'T12:00:00').getTime();
     const daysDiff = Math.abs((mealMs - dateMs) / 86400000);
-    if (daysDiff <= 2) {
+    if (daysDiff <= 4) {
       nearbyKeys.add(key);
       nearby.push({ recipeId, daysDiff });
     }
@@ -1864,7 +1862,7 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKey
         let overlap = 0;
         for (const p of myProteins) if (n.proteins.has(p)) overlap++;
         if (overlap > 0) {
-          const weight = n.daysDiff === 0 ? 40 : (n.daysDiff <= 1 ? 30 : 10);
+          const weight = n.daysDiff === 0 ? 40 : (n.daysDiff <= 1 ? 35 : (n.daysDiff <= 2 ? 25 : (n.daysDiff <= 3 ? 15 : 8)));
           score -= overlap * weight;
         }
       }
@@ -1880,7 +1878,7 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKey
         let overlap = 0;
         for (const b of myBases) if (n.bases.has(b)) overlap++;
         if (overlap > 0) {
-          const weight = n.daysDiff === 0 ? 40 : (n.daysDiff <= 1 ? 30 : 10);
+          const weight = n.daysDiff === 0 ? 40 : (n.daysDiff <= 1 ? 35 : (n.daysDiff <= 2 ? 25 : (n.daysDiff <= 3 ? 15 : 8)));
           score -= overlap * weight;
         }
       }
