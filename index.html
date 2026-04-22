@@ -1392,7 +1392,14 @@ function runGeneration(selections, mode, numWeeks) {
   const weekDates = getWeekDates(numWeeks);
 
   if (mode === 'replace') {
+    // Clear both the meal plan AND the history entries for these dates.
+    // Without this, every regeneration ADDS to mealHistory, inflating
+    // frequency penalties on recipes that happened to be picked in prior
+    // runs. After 3 regenerations, a recipe could have 6+ stale entries,
+    // making it permanently uncompetitive (score 0 vs 30 for fresh recipes).
+    const regeneratedDates = new Set(weekDates.map(d => dateKey(d)));
     weekDates.forEach(d => delete mealPlan[dateKey(d)]);
+    mealHistory = mealHistory.filter(h => !regeneratedDates.has(h.date));
   }
 
   // Filter out slots that already have a meal in fill mode
