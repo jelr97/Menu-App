@@ -1679,6 +1679,16 @@ const BASE_KEYWORDS = {
   sandwich:  ['sandwich', 'emparedado'],
 };
 
+// How strongly each base type penalizes proximity. Burgers and hot dogs
+// feel very repetitive close together; rice is a generic side that many
+// dishes share and shouldn't be penalized hard.
+const BASE_PENALTY_MULT = {
+  burger: 2, hotdog: 2, sandwich: 1.5,
+  bolognese: 1.5, pasta: 1.5,
+  rice: 0.5,
+  wrap: 1, soup: 1,
+};
+
 function getRecipeBases(recipe) {
   if (!recipe) return new Set();
   const namePart = typeof recipe.name === 'object'
@@ -1860,18 +1870,18 @@ function scoreRecipes(candidates, dateStr, dayName, alreadyAssigned, weekDateKey
       }
     }
 
-    // 7. Base/starch proximity — no pasta 3 days in a row, no rice every
-    //    day, etc. Same weights as protein proximity.
+    // 7. Base/starch proximity — per-type multiplier so burgers are
+    //    heavily penalized (2x) while rice is mild (0.5x).
     const myBases = getRecipeBases(recipe);
     if (myBases.size > 0) {
       for (const n of nearbyWithTags) {
         if (n.recipeId === recipe.id) continue;
         if (n.bases.size === 0) continue;
-        let overlap = 0;
-        for (const b of myBases) if (n.bases.has(b)) overlap++;
-        if (overlap > 0) {
-          const weight = n.daysDiff === 0 ? 40 : (n.daysDiff <= 1 ? 35 : (n.daysDiff <= 2 ? 25 : (n.daysDiff <= 3 ? 15 : 8)));
-          score -= overlap * weight;
+        const baseWeight = n.daysDiff === 0 ? 40 : (n.daysDiff <= 1 ? 35 : (n.daysDiff <= 2 ? 25 : (n.daysDiff <= 3 ? 15 : 8)));
+        for (const b of myBases) {
+          if (n.bases.has(b)) {
+            score -= baseWeight * (BASE_PENALTY_MULT[b] || 1);
+          }
         }
       }
     }
