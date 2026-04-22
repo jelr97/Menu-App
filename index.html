@@ -1978,9 +1978,19 @@ function isPantryStaple(name) {
   return PANTRY_STAPLES.has(en);
 }
 
+// Normalize an ingredient name for keying: lowercase + strip trailing 's'
+// so "huevos" and "huevo", "eggs" and "egg" merge into one grocery line.
+// Skips words ending in 'ss' (hummus, bass) and very short words.
+function normalizeIngredientName(name) {
+  let n = (typeof name === 'object' ? name.en : name || '').toLowerCase().trim();
+  if (n.length > 3 && n.endsWith('s') && !n.endsWith('ss')) {
+    n = n.slice(0, -1);
+  }
+  return n;
+}
+
 function invKey(item) {
-  const nameEn = (typeof item.name === 'object' ? item.name.en : item.name).toLowerCase();
-  return nameEn + '|' + item.unit;
+  return normalizeIngredientName(item.name) + '|' + item.unit;
 }
 
 function getWeekNeededIngredients() {
@@ -1997,8 +2007,7 @@ function getWeekNeededIngredients() {
       const mealServings = getMealServings(meal, recipe);
       const scale = recipe.servings > 0 ? (mealServings / recipe.servings) : 1;
       recipe.ingredients.forEach(ing => {
-        const nameEn = (typeof ing.name === 'object' ? ing.name.en : ing.name).toLowerCase();
-        const key = nameEn + '|' + ing.unit;
+        const key = normalizeIngredientName(ing.name) + '|' + ing.unit;
         if (!ingredientMap[key]) {
           ingredientMap[key] = { name: ing.name, amount: 0, unit: ing.unit };
         }
@@ -2013,13 +2022,13 @@ function getWeekNeededIngredients() {
 }
 
 function getInventoryAmount(name, unit) {
-  const key = (typeof name === 'object' ? name.en : name).toLowerCase() + '|' + unit;
+  const key = normalizeIngredientName(name) + '|' + unit;
   const item = inventoryData.items.find(i => invKey(i) === key);
   return item ? item.amount : 0;
 }
 
 function setInventoryAmount(name, unit, amount) {
-  const key = (typeof name === 'object' ? name.en : name).toLowerCase() + '|' + unit;
+  const key = normalizeIngredientName(name) + '|' + unit;
   const existing = inventoryData.items.find(i => invKey(i) === key);
   if (existing) {
     existing.amount = amount;
