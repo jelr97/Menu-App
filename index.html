@@ -580,6 +580,8 @@
   <!-- HIDDEN FILE INPUT -->
   <input type="file" id="fileInput" accept=".json" class="hidden">
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <script src="lang.js"></script>
   <script src="recipes-data.js"></script>
   <script>
@@ -703,115 +705,107 @@ document.getElementById('settingsBtn').addEventListener('click', () => {
 document.getElementById('settingsClose').addEventListener('click', () => settingsModal.classList.remove('active'));
 settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) settingsModal.classList.remove('active'); });
 
-// ===== EXPORT PDF =====
+// ===== EXPORT PDF (jsPDF) =====
 document.getElementById('exportPdfBtn').addEventListener('click', () => {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+
+  // ── Page 1: Plan Semanal ──
+  doc.setFontSize(18);
+  doc.text(t('mealPlan'), 14, 16);
+  doc.setFontSize(9);
+  doc.setTextColor(130);
+  doc.text(new Date().toLocaleDateString(), pageW - 14, 16, { align: 'right' });
+  doc.setTextColor(0);
+
   const allDates = getWeekDates(plannedWeeks);
-  const todayKey = dateKey(new Date());
-
-  // ── Page 1: Plan Semanal (weeks as columns) ──
-  // Group dates into 7-day weeks
   const weeks = [];
-  for (let w = 0; w < plannedWeeks; w++) {
-    weeks.push(allDates.slice(w * 7, w * 7 + 7));
-  }
+  for (let w = 0; w < plannedWeeks; w++) weeks.push(allDates.slice(w * 7, w * 7 + 7));
 
-  const planRows = DAY_NAMES.map((dn, dayIdx) => {
+  const head = [['', ...weeks.map((wd, i) => {
+    let label = '';
+    if (plannedWeeks > 1) label = (currentLang === 'es' ? 'Sem ' : 'Wk ') + (i + 1) + ' ';
+    label += wd[0].getDate() + '/' + (wd[0].getMonth()+1) + '-' + wd[6].getDate() + '/' + (wd[6].getMonth()+1);
+    return label;
+  })]];
+
+  const body = DAY_NAMES.map((dn, dayIdx) => {
+    const dayLabel = t(dn);
     const cells = weeks.map(weekDates => {
       const d = weekDates[dayIdx];
       const key = dateKey(d);
       const meals = mealPlan[key] || [];
-      const slotOrder = ['breakfast', 'lunch', 'dinner'];
-      const sorted = [...meals].sort((a, b) => {
-        const ai = slotOrder.indexOf(a.slot) >= 0 ? slotOrder.indexOf(a.slot) : 99;
-        const bi = slotOrder.indexOf(b.slot) >= 0 ? slotOrder.indexOf(b.slot) : 99;
-        return ai - bi;
-      });
-      if (sorted.length === 0) return '<td style="color:#aaa;font-style:italic">—</td>';
-      const inner = sorted.map(meal => {
+      if (meals.length === 0) return '';
+      const slotOrder = ['lunch', 'dinner'];
+      const sorted = [...meals].sort((a, b) =>
+        (slotOrder.indexOf(a.slot) >= 0 ? slotOrder.indexOf(a.slot) : 99) -
+        (slotOrder.indexOf(b.slot) >= 0 ? slotOrder.indexOf(b.slot) : 99));
+      return sorted.map(meal => {
         const recipe = getRecipeById(meal.recipeId);
-        const slotLabel = meal.slot.startsWith('custom:') ? meal.slot.slice(7) : t(meal.slot);
-        const servings = getMealServings(meal, recipe);
-        return `<b style="font-size:9px;text-transform:uppercase;color:#888">${slotLabel}</b> `
-          + `${recipe ? tName(recipe.name) : '?'}`
-          + (servings > 1 ? ` <span style="color:#2563eb;font-size:11px">(×${servings})</span>` : '');
-      }).join('<br>');
-      return `<td>${inner}</td>`;
-    }).join('');
-    const dayLabel = `<td style="font-weight:700;white-space:nowrap">${t(dn)}</td>`;
-    return `<tr>${dayLabel}${cells}</tr>`;
-  }).join('');
+        const sl = meal.slot.startsWith('custom:') ? meal.slot.slice(7) : t(meal.slot);
+        const sv = getMealServings(meal, recipe);
+        return sl.toUpperCase() + ': ' + (recipe ? tName(recipe.name) : '?')
+          + (sv > 1 ? ' (x' + sv + ')' : '');
+      }).join('\n');
+    });
+    return [dayLabel, ...cells];
+  });
 
-  const weekHeaders = weeks.map((wd, i) =>
-    `<th style="text-align:left">${plannedWeeks > 1 ? (currentLang === 'es' ? 'Semana' : 'Week') + ' ' + (i + 1) + '<br>' : ''}<span style="font-weight:400;font-size:11px;color:#888">${wd[0].getDate()}/${wd[0].getMonth()+1} – ${wd[6].getDate()}/${wd[6].getMonth()+1}</span></th>`
-  ).join('');
+  doc.autoTable({
+    head, body, startY: 22,
+    styles: { fontSize: 8, cellPadding: 2.5 },
+    headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 24 } },
+    theme: 'grid',
+  });
 
-  const planPage = `
-    <div style="page-break-after:always">
-      <h1 style="font-size:20px;margin-bottom:12px">${t('mealPlan')}</h1>
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead><tr><th></th>${weekHeaders}</tr></thead>
-        <tbody>${planRows}</tbody>
-      </table>
-    </div>`;
+  // ── Page 2: Lista de Compras (2 columns) ──
+  doc.addPage();
+  doc.setFontSize(18);
+  doc.setTextColor(0);
+  doc.text(t('groceryList'), 14, 16);
 
-  // ── Page 2: Lista de Compras ──
   const needed = getWeekNeededIngredients();
+  const toBuyItems = needed.map(ing => {
+    const onHand = getInventoryAmount(ing.name, ing.unit);
+    const toBuy = Math.max(0, +(ing.amount - onHand).toFixed(1));
+    return { name: tName(ing.name), amount: toBuy, unit: ing.unit };
+  }).filter(item => item.amount > 0);
   const manualItems = (groceryData.manualItems || []).filter(i => !i.checked);
 
-  let groceryRows = '';
-  if (needed.length > 0) {
-    groceryRows = needed.map(ing => {
-      const onHand = getInventoryAmount(ing.name, ing.unit);
-      const toBuy = Math.max(0, +(ing.amount - onHand).toFixed(1));
-      if (toBuy <= 0) return '';
-      return `<tr>
-        <td>${tName(ing.name)}</td>
-        <td style="text-align:right;font-weight:600">${toBuy} ${ing.unit}</td>
-      </tr>`;
-    }).join('');
+  const allItems = [
+    ...toBuyItems.map(i => i.name + '  —  ' + i.amount + ' ' + i.unit),
+    ...(manualItems.length > 0 ? ['', '— ' + t('manualItems').toUpperCase() + ' —'] : []),
+    ...manualItems.map(i => i.name),
+  ];
+
+  const mid = Math.ceil(allItems.length / 2);
+  const leftCol = allItems.slice(0, mid);
+  const rightCol = allItems.slice(mid);
+  const maxRows = Math.max(leftCol.length, rightCol.length);
+  const tableBody = [];
+  for (let i = 0; i < maxRows; i++) {
+    tableBody.push([leftCol[i] || '', rightCol[i] || '']);
   }
 
-  const manualRows = manualItems.map(item =>
-    `<tr><td>${item.name}</td><td></td></tr>`
-  ).join('');
-
-  const groceryPage = `
-    <div>
-      <h1 style="font-size:20px;margin-bottom:12px">${t('groceryList')}</h1>
-      ${needed.length === 0 && manualItems.length === 0
-        ? '<p style="color:#999">—</p>'
-        : `<table style="width:100%;border-collapse:collapse;font-size:13px">
-            <tbody>
-              ${groceryRows}
-              ${manualItems.length > 0 ? `<tr><td colspan="2" style="padding-top:16px;font-weight:700;font-size:11px;text-transform:uppercase;color:#888">${t('manualItems')}</td></tr>${manualRows}` : ''}
-            </tbody>
-          </table>`
+  doc.autoTable({
+    body: tableBody, startY: 22,
+    styles: { fontSize: 9, cellPadding: 2 },
+    columnStyles: { 0: { cellWidth: (pageW - 28) / 2 }, 1: { cellWidth: (pageW - 28) / 2 } },
+    theme: 'plain',
+    didParseCell: (data) => {
+      if (data.cell.raw && data.cell.raw.startsWith('—')) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.textColor = [130, 130, 130];
       }
-    </div>`;
+    },
+  });
 
-  // ── Build and print ──
-  const html = `<!DOCTYPE html>
-<html><head>
-<meta charset="UTF-8">
-<title>Menu App – ${new Date().toLocaleDateString()}</title>
-<style>
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:-apple-system,system-ui,sans-serif; color:#1c1c1e; padding:24px; }
-  table { border-collapse:collapse; width:100%; }
-  th, td { padding:6px 8px; border-bottom:1px solid #e5e5e5; vertical-align:top; text-align:left; }
-  thead th { border-bottom:2px solid #ccc; font-size:13px; }
-  @media print {
-    body { padding:16px; }
-    @page { margin:12mm; }
-  }
-</style>
-</head><body>${planPage}${groceryPage}</body></html>`;
-
-  const w = window.open('', '_blank');
-  if (!w) { showToast('Pop-up blocked'); return; }
-  w.document.write(html);
-  w.document.close();
-  setTimeout(() => { w.print(); }, 300);
+  // Open in new browser tab
+  const pdfBlob = doc.output('blob');
+  const url = URL.createObjectURL(pdfBlob);
+  window.open(url, '_blank');
 });
 
 // ===== TOAST =====
@@ -1069,7 +1063,7 @@ function renderRecipesList() {
       data-lang-placeholder="search" data-t-placeholder="search" placeholder="${t('search')}"
       style="margin-bottom:8px;">
     <div class="chip-row">
-      ${['all','breakfast','lunch','dinner'].map(cat =>
+      ${['all','lunch','dinner'].map(cat =>
         `<button class="chip ${currentCategory === cat ? 'active' : ''}" data-cat="${cat}" data-t="${cat}">
           ${t(cat)}
         </button>`
@@ -1204,7 +1198,7 @@ function openRecipeForm(existingRecipe) {
     <div class="mb-8">
       <label style="font-size:13px;color:#888" data-t="category">${t('category')}</label>
       <select id="rCategory">
-        ${['breakfast','lunch','dinner','lunchDinner'].map(cat =>
+        ${['lunch','dinner','lunchDinner'].map(cat =>
           `<option value="${cat}" ${r.category === cat ? 'selected' : ''} data-t="${cat}">${t(cat)}</option>`
         ).join('')}
       </select>
@@ -1348,14 +1342,23 @@ function getMealServings(meal, recipe) {
 
 // ===== CHECKLIST VIEW & GENERATION =====
 const DAY_NAMES = ['mon','tue','wed','thu','fri','sat','sun'];
-const MEAL_SLOTS = ['breakfast','lunch','dinner'];
+const MEAL_SLOTS = ['lunch','dinner'];
 
 function renderChecklistView() {
   const container = document.getElementById('tab-mealplan');
   const weekDates = getWeekDates();
   const todayKey = dateKey(new Date());
 
-  // Load pattern or default to all unchecked
+  // Migrate old checkbox-based pattern to people-count format
+  if (checklistPattern && typeof Object.values(checklistPattern)[0] === 'object') {
+    const migrated = {};
+    DAY_NAMES.forEach(dn => {
+      const old = checklistPattern[dn];
+      migrated[dn] = (old && (old.lunch || old.dinner)) ? 2 : 0;
+    });
+    checklistPattern = migrated;
+    saveChecklistPattern();
+  }
   const pattern = checklistPattern || {};
 
   container.innerHTML = `
@@ -1366,25 +1369,19 @@ function renderChecklistView() {
       <span style="font-weight:700;font-size:16px;color:#2563eb;min-width:22px;text-align:center" id="weeksCount">${plannedWeeks}</span>
       <button class="meal-portion-btn" id="weeksUp" ${plannedWeeks >= 4 ? 'disabled' : ''}>+</button>
     </div>
-    <div class="checklist-header">
-      <span></span>
-      <span>${t('brkfst')}</span>
-      <span>${t('lunchShort')}</span>
-      <span>${t('dinnerShort')}</span>
-    </div>
     <div class="checklist-grid">
       ${weekDates.map((d, i) => {
         const dn = DAY_NAMES[i];
         const isToday = dateKey(d) === todayKey;
-        const dp = pattern[dn] || {};
-        return `<div class="checklist-row">
+        const count = typeof pattern[dn] === 'number' ? pattern[dn] : 2;
+        return `<div class="checklist-row" style="grid-template-columns:1fr auto">
           <div class="day-label ${isToday ? 'today' : ''}">${t(dn)}</div>
-          ${MEAL_SLOTS.map(slot => `
-            <div class="cb-cell">
-              <input type="checkbox" data-day="${dn}" data-slot="${slot}"
-                ${dp[slot] ? 'checked' : ''}>
-            </div>
-          `).join('')}
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="meal-portion-btn people-btn" data-day="${dn}" data-action="dec" ${count <= 0 ? 'disabled' : ''}>−</button>
+            <span class="meal-portion-count people-count" data-day="${dn}" style="min-width:22px">${count}</span>
+            <button class="meal-portion-btn people-btn" data-day="${dn}" data-action="inc">+</button>
+            <span style="font-size:12px;color:#8e8e93;min-width:55px">${currentLang === 'es' ? 'personas' : 'people'}</span>
+          </div>
         </div>`;
       }).join('')}
     </div>
@@ -1392,15 +1389,21 @@ function renderChecklistView() {
     ${weekHasMeals() ? `<button class="btn btn-secondary btn-full" id="backToWeekBtn" style="margin-top:8px">${t('cancel')}</button>` : ''}
   `;
 
-  // Save pattern on each checkbox change
-  container.querySelectorAll('.checklist-grid input[type="checkbox"]').forEach(cb => {
-    cb.addEventListener('change', () => {
+  // People +/- handlers
+  container.querySelectorAll('.people-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
       if (!checklistPattern) checklistPattern = {};
-      const dn = cb.dataset.day;
-      const slot = cb.dataset.slot;
-      if (!checklistPattern[dn]) checklistPattern[dn] = {};
-      checklistPattern[dn][slot] = cb.checked;
+      const dn = btn.dataset.day;
+      const countEl = container.querySelector(`.people-count[data-day="${dn}"]`);
+      let current = parseInt(countEl.textContent) || 0;
+      const delta = btn.dataset.action === 'inc' ? 1 : -1;
+      current = Math.max(0, current + delta);
+      countEl.textContent = current;
+      checklistPattern[dn] = current;
       saveChecklistPattern();
+      const decBtn = container.querySelector(`.people-btn[data-day="${dn}"][data-action="dec"]`);
+      if (current <= 0) decBtn.setAttribute('disabled', '');
+      else decBtn.removeAttribute('disabled');
     });
   });
 
@@ -1431,7 +1434,7 @@ function renderChecklistView() {
   // Generate button
   document.getElementById('generateBtn').addEventListener('click', () => {
     const selections = collectChecklistSelections(plannedWeeks);
-    if (selections.length === 0) { showToast('Check at least one meal'); return; }
+    if (selections.length === 0) { showToast(currentLang === 'es' ? 'Agrega al menos 1 persona' : 'Set at least 1 person'); return; }
 
     if (weekHasMeals()) {
       showReplaceOrFillModal(selections, plannedWeeks);
@@ -1449,16 +1452,20 @@ function collectChecklistSelections(numWeeks) {
   numWeeks = numWeeks || 1;
   const selections = [];
   const baseWeekDates = getWeekDates(1);
-  const checked = document.querySelectorAll('.checklist-grid input[type="checkbox"]:checked');
+  const pat = checklistPattern || {};
   for (let w = 0; w < numWeeks; w++) {
-    checked.forEach(cb => {
-      const dayIdx = DAY_NAMES.indexOf(cb.dataset.day);
+    DAY_NAMES.forEach((dn, dayIdx) => {
+      const count = typeof pat[dn] === 'number' ? pat[dn] : 2;
+      if (count <= 0) return;
       const d = new Date(baseWeekDates[dayIdx]);
       d.setDate(d.getDate() + w * 7);
-      selections.push({
-        date: dateKey(d),
-        dayName: cb.dataset.day,
-        slot: cb.dataset.slot
+      MEAL_SLOTS.forEach(slot => {
+        selections.push({
+          date: dateKey(d),
+          dayName: dn,
+          slot: slot,
+          servings: count,
+        });
       });
     });
   }
@@ -1566,7 +1573,7 @@ function runGeneration(selections, mode, numWeeks) {
     const pick = scored[0];
 
     if (!mealPlan[sel.date]) mealPlan[sel.date] = [];
-    mealPlan[sel.date].push({ slot: sel.slot, recipeId: pick.id, servings: pick.servings });
+    mealPlan[sel.date].push({ slot: sel.slot, recipeId: pick.id, servings: sel.servings || pick.servings });
     assigned.push({ recipeId: pick.id, date: sel.date, slot: sel.slot });
     mealHistory.push({ recipeId: pick.id, date: sel.date, slot: sel.slot });
   });
@@ -1871,7 +1878,7 @@ function renderMealPlan() {
         const key = dateKey(d);
         const isToday = key === todayKey;
         const meals = mealPlan[key] || [];
-        const slotOrder = ['breakfast','lunch','dinner'];
+        const slotOrder = ['lunch','dinner'];
         const sorted = [...meals].sort((a, b) => {
           const ai = slotOrder.indexOf(a.slot) >= 0 ? slotOrder.indexOf(a.slot) : 99;
           const bi = slotOrder.indexOf(b.slot) >= 0 ? slotOrder.indexOf(b.slot) : 99;
@@ -2002,7 +2009,7 @@ function openAddMealFlow(dateStr) {
     <div class="modal">
       <h2>${t('selectSlot')}</h2>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${['breakfast','lunch','dinner'].map(slot =>
+        ${['lunch','dinner'].map(slot =>
           `<button class="btn btn-secondary btn-full slot-pick" data-slot="${slot}">${t(slot)}</button>`
         ).join('')}
         <button class="btn btn-secondary btn-full slot-pick" data-slot="custom">${t('customSlot')}</button>
