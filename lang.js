@@ -7,7 +7,6 @@ const LANG = {
   // Common
   search: { en: "Search recipes...", es: "Buscar recetas..." },
   all: { en: "All", es: "Todas" },
-  breakfast: { en: "Breakfast", es: "Desayuno" },
   lunch: { en: "Lunch", es: "Almuerzo" },
   dinner: { en: "Dinner", es: "Cena" },
   lunchDinner: { en: "Lunch/Dinner", es: "Almuerzo/Cena" },
@@ -97,9 +96,9 @@ const LANG = {
   replaceAll: { en: "Replace All", es: "Reemplazar Todo" },
   fillEmpty: { en: "Fill Empty", es: "Llenar Vacíos" },
   noRecipesInCategory: { en: "No recipes available for: ", es: "No hay recetas disponibles para: " },
-  brkfst: { en: "Breakfast", es: "Desayuno" },
   lunchShort: { en: "Lunch", es: "Almuerzo" },
   dinnerShort: { en: "Dinner", es: "Cena" },
+  people: { en: "People", es: "Personas" },
 
   // Sync
   sync: { en: "Sync", es: "Sincronizar" },
