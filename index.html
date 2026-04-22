@@ -586,8 +586,6 @@
   <!-- HIDDEN FILE INPUT -->
   <input type="file" id="fileInput" accept=".json" class="hidden">
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js" crossorigin="anonymous"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" crossorigin="anonymous"></script>
   <script src="lang.js"></script>
   <script src="recipes-data.js"></script>
   <script>
@@ -711,61 +709,96 @@ document.getElementById('settingsBtn').addEventListener('click', () => {
 document.getElementById('settingsClose').addEventListener('click', () => settingsModal.classList.remove('active'));
 settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) settingsModal.classList.remove('active'); });
 
+// ===== RAW PDF GENERATOR (zero dependencies) =====
+// Builds a real .pdf file byte-by-byte using Helvetica (built into every
+// PDF viewer) with WinAnsiEncoding for Spanish accent support.
+function buildPDF(pages) {
+  const buf = [];
+  const w = s => { for (let i = 0; i < s.length; i++) buf.push(s.charCodeAt(i) <= 255 ? s.charCodeAt(i) : 63); };
+  const lit = s => {
+    let r = '(';
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c === 40 || c === 41 || c === 92) r += '\\' + String.fromCharCode(c);
+      else if (c <= 255) r += String.fromCharCode(c);
+      else r += '?';
+    }
+    return r + ')';
+  };
+  const offsets = []; let nextId = 1;
+  const obj = (content) => { const id = nextId++; offsets[id] = buf.length; w(id + ' 0 obj\n' + content + '\nendobj\n'); return id; };
+
+  w('%PDF-1.4\n');
+  const f1 = obj('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  const f2 = obj('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  const pagesId = nextId++; // reserve
+  const pageRefs = [];
+
+  for (const page of pages) {
+    let s = '';
+    let y = 800;
+    for (const ln of page) {
+      if (y < 30) break;
+      const font = ln.bold ? '/F2' : '/F1';
+      const sz = ln.size || 10;
+      const x = ln.x || 40;
+      if (ln.gap) y -= ln.gap;
+      s += `BT ${font} ${sz} Tf ${x} ${y} Td ${lit(ln.text)} Tj ET\n`;
+      y -= (ln.leading || 14);
+    }
+    const cId = obj('<< /Length ' + s.length + ' >>\nstream\n' + s + 'endstream');
+    const pId = obj('<< /Type /Page /Parent ' + pagesId + ' 0 R /MediaBox [0 0 595 842] /Contents ' + cId + ' 0 R /Resources << /Font << /F1 ' + f1 + ' 0 R /F2 ' + f2 + ' 0 R >> >> >>');
+    pageRefs.push(pId);
+  }
+
+  offsets[pagesId] = buf.length;
+  w(pagesId + ' 0 obj\n<< /Type /Pages /Kids [' + pageRefs.map(id => id + ' 0 R').join(' ') + '] /Count ' + pageRefs.length + ' >>\nendobj\n');
+  const catId = obj('<< /Type /Catalog /Pages ' + pagesId + ' 0 R >>');
+
+  const xref = buf.length;
+  w('xref\n0 ' + nextId + '\n0000000000 65535 f \n');
+  for (let i = 1; i < nextId; i++) w(String(offsets[i]).padStart(10, '0') + ' 00000 n \n');
+  w('trailer\n<< /Size ' + nextId + ' /Root ' + catId + ' 0 R >>\nstartxref\n' + xref + '\n%%EOF');
+  return new Uint8Array(buf);
+}
+
 // ===== EXPORT PDF =====
 document.getElementById('exportPdfBtn').addEventListener('click', () => {
-  if (!window.jspdf) {
-    showToast(currentLang === 'es' ? 'Librería PDF no cargada. Verifica tu conexión.' : 'PDF library not loaded. Check connection.');
-    return;
-  }
   try {
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pw = doc.internal.pageSize.getWidth();
-
-    // ── Page 1: Plan Semanal ──
-    doc.setFontSize(18);
-    doc.text(t('mealPlan'), 14, 16);
-    doc.setFontSize(9); doc.setTextColor(130);
-    doc.text(new Date().toLocaleDateString(), pw - 14, 16, { align: 'right' });
-    doc.setTextColor(0);
-
     const allDates = getWeekDates(plannedWeeks);
     const weeks = [];
     for (let w = 0; w < plannedWeeks; w++) weeks.push(allDates.slice(w * 7, w * 7 + 7));
 
-    const head = [['', ...weeks.map((wd, i) => {
-      let l = plannedWeeks > 1 ? (currentLang==='es'?'Sem ':'Wk ') + (i+1) + '\n' : '';
-      return l + wd[0].getDate()+'/'+(wd[0].getMonth()+1)+' - '+wd[6].getDate()+'/'+(wd[6].getMonth()+1);
-    })]];
+    // ── Build Page 1: Plan Semanal ──
+    const p1 = [];
+    p1.push({ text: t('mealPlan'), bold: true, size: 18, leading: 6 });
+    p1.push({ text: new Date().toLocaleDateString(), size: 9, leading: 20 });
 
-    const body = DAY_NAMES.map((dn, dayIdx) => {
-      const cells = weeks.map(wd => {
-        const meals = mealPlan[dateKey(wd[dayIdx])] || [];
-        if (!meals.length) return '';
+    for (let wi = 0; wi < weeks.length; wi++) {
+      const wd = weeks[wi];
+      if (plannedWeeks > 1) {
+        p1.push({ text: (currentLang === 'es' ? 'Semana ' : 'Week ') + (wi + 1) + '  (' + wd[0].getDate() + '/' + (wd[0].getMonth()+1) + ' - ' + wd[6].getDate() + '/' + (wd[6].getMonth()+1) + ')', bold: true, size: 11, gap: 6, leading: 16 });
+      }
+      for (let di = 0; di < 7; di++) {
+        const d = wd[di];
+        const meals = mealPlan[dateKey(d)] || [];
+        if (meals.length === 0) continue;
         const so = ['lunch','dinner'];
-        return [...meals].sort((a,b) => (so.indexOf(a.slot)>=0?so.indexOf(a.slot):99)-(so.indexOf(b.slot)>=0?so.indexOf(b.slot):99))
-          .map(m => {
-            const r = getRecipeById(m.recipeId);
-            const sl = m.slot.startsWith('custom:')?m.slot.slice(7):t(m.slot);
-            const sv = getMealServings(m, r);
-            return sl.toUpperCase()+': '+(r?tName(r.name):'?')+(sv>1?' (x'+sv+')':'');
-          }).join('\n');
-      });
-      return [t(dn), ...cells];
-    });
+        const sorted = [...meals].sort((a,b) => (so.indexOf(a.slot)>=0?so.indexOf(a.slot):99)-(so.indexOf(b.slot)>=0?so.indexOf(b.slot):99));
+        p1.push({ text: t(DAY_NAMES[di]) + '  ' + d.getDate() + '/' + (d.getMonth()+1), bold: true, size: 10, gap: 4, leading: 14 });
+        for (const meal of sorted) {
+          const recipe = getRecipeById(meal.recipeId);
+          const sl = meal.slot.startsWith('custom:') ? meal.slot.slice(7) : t(meal.slot);
+          const sv = getMealServings(meal, recipe);
+          const name = recipe ? tName(recipe.name) : '?';
+          p1.push({ text: '   ' + sl.toUpperCase() + ':  ' + name + (sv > 1 ? '  (x' + sv + ')' : ''), size: 9, x: 55, leading: 13 });
+        }
+      }
+    }
 
-    doc.autoTable({
-      head, body, startY: 22,
-      styles: { fontSize: 8, cellPadding: 2.5, overflow: 'linebreak' },
-      headStyles: { fillColor: [37,99,235], textColor: 255, fontStyle: 'bold' },
-      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 24 } },
-      theme: 'grid',
-    });
-
-    // ── Page 2: Lista de Compras (2 columns) ──
-    doc.addPage();
-    doc.setFontSize(18); doc.setTextColor(0);
-    doc.text(t('groceryList'), 14, 16);
+    // ── Build Page 2: Lista de Compras (2 columns) ──
+    const p2 = [];
+    p2.push({ text: t('groceryList'), bold: true, size: 18, leading: 6 });
 
     const needed = getWeekNeededIngredients();
     const toBuy = needed.map(ing => {
@@ -774,38 +807,45 @@ document.getElementById('exportPdfBtn').addEventListener('click', () => {
       return { name: tName(ing.name), amount: tb, unit: ing.unit };
     }).filter(i => i.amount > 0);
     const manual = (groceryData.manualItems || []).filter(i => !i.checked);
-    const all = [...toBuy.map(i => [i.name, i.amount+' '+i.unit]),
-                 ...(manual.length ? [['— '+(currentLang==='es'?'Manuales':'Manual')+' —', '']] : []),
-                 ...manual.map(i => [i.name, ''])];
 
-    const mid = Math.ceil(all.length / 2);
-    const tbl = [];
-    for (let i = 0; i < Math.max(mid, all.length - mid); i++) {
-      const l = all[i] || ['',''];
-      const r = all[i + mid] || ['',''];
-      tbl.push([l[0], l[1], r[0], r[1]]);
+    p2.push({ text: toBuy.length + ' ' + (currentLang === 'es' ? 'articulos' : 'items'), size: 9, leading: 18 });
+
+    // Left column (items 0..mid-1), then right column (mid..end)
+    const mid = Math.ceil(toBuy.length / 2);
+    const maxCol = Math.max(mid, toBuy.length - mid);
+    for (let i = 0; i < maxCol; i++) {
+      const left = toBuy[i];
+      const right = toBuy[i + mid];
+      let line = '';
+      if (left) line += left.name + '  ' + left.amount + ' ' + left.unit;
+      line = line.padEnd(45, ' ');
+      if (right) line += right.name + '  ' + right.amount + ' ' + right.unit;
+      p2.push({ text: line, size: 9, leading: 13 });
     }
 
-    doc.autoTable({
-      body: tbl, startY: 22,
-      styles: { fontSize: 9, cellPadding: 2 },
-      columnStyles: {
-        0: { cellWidth: (pw-28)/2 - 18 },
-        1: { cellWidth: 18, halign: 'right', fontStyle: 'bold' },
-        2: { cellWidth: (pw-28)/2 - 18 },
-        3: { cellWidth: 18, halign: 'right', fontStyle: 'bold' },
-      },
-      theme: 'plain',
-      didDrawCell: (data) => {
-        if (data.row.index === 0 || !data.cell.raw) return;
-        if (data.column.index === 1 || data.column.index === 3) return;
-        const y = data.cell.y + data.cell.height;
-        doc.setDrawColor(230); doc.setLineWidth(0.2);
-        doc.line(data.cell.x, y, data.cell.x + data.cell.width + 18, y);
-      },
-    });
+    if (manual.length > 0) {
+      p2.push({ text: '', leading: 8 });
+      p2.push({ text: currentLang === 'es' ? 'ARTICULOS MANUALES' : 'MANUAL ITEMS', bold: true, size: 9, leading: 14 });
+      for (const item of manual) {
+        p2.push({ text: '  ' + item.name, size: 9, leading: 13 });
+      }
+    }
 
-    doc.save('menu-plan.pdf');
+    // ── Generate and download ──
+    const pdfBytes = buildPDF([p1, p2]);
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const file = new File([blob], 'menu-plan.pdf', { type: 'application/pdf' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: 'Menu Plan' }).catch(() => {});
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'menu-plan.pdf';
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
   } catch (e) {
     showToast('Error: ' + e.message);
   }
