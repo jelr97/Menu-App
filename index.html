@@ -1530,10 +1530,13 @@ function getRecipeProteins(recipe) {
 // Scans both the recipe NAME (where "Lasaña" or "Spaghetti" typically
 // appears) and ingredients (where "espaguetis" or "arroz" live).
 const BASE_KEYWORDS = {
-  pasta: ['spaghetti', 'espagueti', 'pasta', 'lasagna', 'lasana', 'penne',
-          'fettuccine', 'macaroni', 'fideos', 'tallarines', 'rigatoni',
-          'ravioli', 'linguine', 'fusilli', 'noodle', 'fideo'],
-  rice:  ['rice', 'arroz', 'risotto'],
+  pasta:  ['spaghetti', 'espagueti', 'pasta', 'lasagna', 'lasana', 'penne',
+           'fettuccine', 'macaroni', 'fideos', 'tallarines', 'rigatoni',
+           'ravioli', 'linguine', 'fusilli', 'noodle', 'fideo'],
+  rice:   ['rice', 'arroz', 'risotto'],
+  burger: ['hamburguesa', 'burger', 'hamburger'],
+  wrap:   ['burrito', 'wrap'],
+  soup:   ['sopa', 'soup', 'caldo', 'crema de'],
 };
 
 function getRecipeBases(recipe) {
